@@ -11,6 +11,10 @@ No build, packaging or npm install is needed for the bridge itself.
 
 ## Use the bridge
 
+Choose either route. Both use the same `dsh-codex-bridge/` files and require your own DSH setup.
+
+### Option 1: copy the folder
+
 1. Copy `dsh-codex-bridge/` into your project's root. Omit any locally generated `.state/`.
    A clean Git clone contains no machine-specific state or credentials.
 2. Install PowerShell 7, Node.js 22.14+ and DeepSeek Harness. Configure your own DSH
@@ -38,6 +42,30 @@ pwsh -NoProfile -File dsh-codex-bridge/dsh-impl.ps1 -Spec docs/design/001-exampl
 The normal bridge invocation includes Windows preflight. Repair is explicit and saves recovery
 information. DSH stays confined to workspace-write. Run reports are local, ignored artifacts;
 a successful model response alone is never acceptance.
+
+### Option 2: install as a Codex skill from GitHub
+
+Ask Codex:
+
+```text
+Use $skill-installer to install the skill from
+https://github.com/minzhang/dsh-codex-bridge/tree/main/dsh-codex-bridge
+```
+
+After installation, invoke it in your project:
+
+```text
+Use $dsh-codex-bridge for this project. Use DeepSeek Flash with Max effort and
+sandbox enabled. Delegate implementation and testing to DSH, review and rework,
+then report acceptance and pause after each phase.
+```
+
+The [skill entry point](dsh-codex-bridge/SKILL.md) teaches the same workflow. It reuses the project's
+existing bridge or copies its bundled folder into the project root when absent. Setup and recovery
+data stay in that project; the installed skill remains reusable. No installer script, build or
+packaging pipeline is required in this repository. The original copy-folder route remains available
+without installing a skill. A folder placed only in the project root is loaded by asking Codex to
+read its `SKILL.md`; it is not automatically registered as an installed `$dsh-codex-bridge` skill.
 
 ## Repository layout
 

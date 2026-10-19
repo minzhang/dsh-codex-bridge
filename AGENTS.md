@@ -24,6 +24,10 @@ claims that untested platforms or project types have been verified.
 Distribution is direct folder copy. The user explicitly removed CI and packaging/export tooling
 from scope. No build, package or release pipeline is required to deliver the bridge.
 
+The same delivery folder may also be installed as a Codex skill from GitHub. Preserve both entry
+points and one canonical runtime. Skill onboarding must reuse or copy a project-local bridge;
+never run Windows repair against the shared skill installation or overwrite recovery evidence.
+
 ## Constraints
 
 - Use DeepSeek Flash with Max effort and DSH workspace-write confinement. Never disable it to

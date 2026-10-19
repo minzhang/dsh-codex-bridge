@@ -64,6 +64,12 @@ Copy `dsh-codex-bridge/` directly from a clean checkout into the target project'
 its own MIT license and operational setup probes. No build, export or packaging step is required.
 When copying from a used workspace, omit the locally generated `.state/` directory.
 
+The same folder also contains `SKILL.md` and `agents/openai.yaml` for optional GitHub skill
+installation. Keep this entry point linked to the existing documentation and runtime; do not
+maintain a second bridge implementation. Check skill frontmatter and local references when editing
+it, and verify both direct-folder use and copying from an installed skill into a target project.
+Setup must run from the project-local copy, preserving any existing bridge and recovery data.
+
 Tests use disposable fixtures. Real setup evidence and publication logs stay ignored in `.state/`
 and `.dsh-runs/`. Keep permission backups where they were created; never distribute a backup to a
 new repository or restore it against another tree.

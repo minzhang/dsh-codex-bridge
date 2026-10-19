@@ -5,9 +5,38 @@ agent instructions, Windows sandbox setup/repair, and Node subprocess helpers. M
 are kept outside this delivery folder.
 It does not depend on the project in which it was developed.
 
+This same folder is also a Codex skill, through [SKILL.md](SKILL.md). Both delivery routes use
+the scripts and instructions here; neither requires a build or packaging step.
+
 Codex designs and reviews; DeepSeek Harness (DSH) implements and runs acceptance checks.
 Changes stay uncommitted until the user asks otherwise. A completed agent run is not acceptance:
 Codex reviews the implementation and independently verifies the result.
+
+## Optional skill installation from GitHub
+
+The direct copy-folder workflow below remains available without skill installation. To install
+this folder as a discoverable skill instead, ask Codex:
+
+```text
+Use $skill-installer to install the skill from
+https://github.com/minzhang/dsh-codex-bridge/tree/main/dsh-codex-bridge
+```
+
+Then, in the target project's chat:
+
+```text
+Use $dsh-codex-bridge to design and delegate this project's next phase to DSH.
+Use Flash with Max effort and sandbox enabled. Review and rework the result,
+report acceptance, and pause before the next phase.
+```
+
+The skill reads these instructions and reuses an existing `<repo>/dsh-codex-bridge/`, or copies
+the complete bundled folder there if absent, omitting `.state/`. It runs setup and delegation from
+that project-local copy. It must not run Windows repair from the shared skill installation or
+overwrite an existing bridge's recovery data. DSH installation/authentication are still required.
+
+When you only copy this folder to the project root, ask Codex to read `dsh-codex-bridge/SKILL.md`
+directly if you want the skill workflow. That location alone does not register the `$` skill name.
 
 ## Start here in a new project
 
@@ -117,6 +146,8 @@ A missing key/profile is an authentication/setup problem, not a reason to disabl
 | Path | Purpose |
 |---|---|
 | `dsh-impl.ps1` | Design → DSH run → review report |
+| `SKILL.md` | Optional Codex skill entry point for setup, delegation and review |
+| `agents/openai.yaml` | Codex skill display metadata |
 | `AGENTS.md` | Portable collaboration and onboarding instructions |
 | `docs/design/TEMPLATE.md` | Per-phase design skeleton |
 | `docs/windows-sandbox.md` | Windows diagnosis, repair, verification and rollback method |

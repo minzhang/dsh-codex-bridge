@@ -73,3 +73,24 @@ The repository is public at [minzhang/dsh-codex-bridge](https://github.com/minzh
 with `main` as its default branch and GitHub recognizing the MIT license. Publication checks cover
 unintended local files, credential patterns, personal workspace paths and broken local Markdown
 links. There is no CI or generated delivery artifact; the tracked delivery folder is ready to copy.
+
+## Optional Codex skill entry point — 2026-10-19
+
+Added `dsh-codex-bridge/SKILL.md` and `agents/openai.yaml` to the same delivery folder. The original
+project-root copy workflow remains supported. GitHub skill installation is an optional second
+route, with one canonical set of runtime files. The skill reuses an existing project bridge or
+copies its bundled folder there, omitting local state; all setup and delegation run from that
+project-local copy. It preserves user model/effort choices, sandbox preflight, DSH implementation
+and testing, Codex independent review/rework, and requested phase pauses.
+
+This is an instruction/documentation change; no bridge, Windows setup, Node helper, or demo code
+changed. Codex used the skill-creator validator and inspected all relative skill references.
+Temporary fixtures checked both direct copying and copying from an installed-skill layout,
+including hidden files, MIT license, identical file contents, absence of `.state/`, paths with
+spaces, explicit target repository selection, and project-local dry-run output. These checks did
+not launch a live DSH session or apply permissions. A fresh Codex session's skill selection and
+live delegation have not been independently exercised for this entry point.
+
+Local acceptance: skill validation passed; both route dry runs passed; all 12 ordinary bridge
+tests, Windows syntax/boundary/ACL checks, demo typecheck/build and all 148 ordinary demo tests
+passed with no failures or skips. Evidence stays ignored under `.dsh-runs/skill-checks/`.
