@@ -1,7 +1,7 @@
 # Working on DSH Codex Bridge
 
 The primary product is `dsh-codex-bridge/`, a self-contained delivery folder copied into new
-repositories. `development/` contains maintainer tests, packaging tools, designs and sanitized
+repositories. `development/` contains maintainer tests, designs and sanitized
 history. `demos/pascal-desk/` is the first verification demo. Delivery must not depend on either
 supporting directory. Keep future demos under `demos/`.
 
@@ -20,6 +20,9 @@ including commits and pushing/merging the code. Codex may complete that publicat
 not commit, publish, access GitHub credentials, or change authentication/profile configuration.
 The Pascal Desk feature phases are complete; this task does not authorize new demo features or
 claims that untested platforms or project types have been verified.
+
+Distribution is direct folder copy. The user explicitly removed CI and packaging/export tooling
+from scope. No build, package or release pipeline is required to deliver the bridge.
 
 ## Constraints
 

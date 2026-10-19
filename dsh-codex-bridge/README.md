@@ -145,7 +145,7 @@ Direct PowerShell invocation is the clearest route for setup diagnostics.
 
 The bundled Windows `Verify` action is an operational readiness check. Its probes stay in the
 copyable package because a new repository needs them to validate setup. Development regression
-suites, packaging tools and historical acceptance records are maintained outside this folder.
+suites and historical acceptance records are maintained outside this folder.
 
 After setup, write a verification-only design using `docs/design/TEMPLATE.md`. Name the target
 project's actual typecheck, build and complete test commands. Delegate it through the bridge,

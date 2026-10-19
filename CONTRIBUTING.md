@@ -1,7 +1,7 @@
 # Contributing
 
 The copyable `dsh-codex-bridge/` folder is the product. Keep its operational scripts and
-instructions self-contained; put regression tests and packaging tools in `development/`.
+instructions self-contained; put regression tests in `development/`.
 Add future example projects under `demos/` with their own README, dependencies and tests.
 
 ## Local checks
@@ -15,12 +15,11 @@ npm test
 npm run test:windows
 npm --prefix demos/pascal-desk run check
 npm run test:demo
-npm run package
 ```
 
 See [development/README.md](development/README.md) for the declaration check, sandbox commands
-and host-only copied-folder lifecycle verification. The package command requires a fresh export
-location; preserve any export you need before removing its generated output.
+and host-only copied-folder lifecycle verification. The delivery folder is copied directly;
+there is no build or packaging step for bridge users.
 
 ## Changes and review
 
@@ -29,7 +28,7 @@ run. For Codex/DSH work, follow [AGENTS.md](AGENTS.md): Codex writes the design;
 tests and reworks; Codex reviews and reruns acceptance checks. Keep failures and platform limits
 visible. Never weaken assertions or disable confinement to make a run pass.
 
-When adding a delivery file, update `development/delivery-files.json` and the packaging tests.
+When adding a delivery file, keep it self-contained and verify it from a copied folder.
 Keep normal and sandbox suites equivalent. Do not commit run transcripts, credentials, local
 profiles, `.state/` recovery data, dependencies or build output. Report setup failures with
 sanitized summaries; inspect logs for secrets and personal paths before sharing them.

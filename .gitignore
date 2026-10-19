@@ -8,5 +8,4 @@ coverage/
 *.log
 .DS_Store
 .state/
-.artifacts/
 *.tsbuildinfo

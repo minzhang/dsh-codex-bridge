@@ -7,6 +7,7 @@ rework when needed, and independently verifies the result before accepting it.
 The primary product is the **[`dsh-codex-bridge/`](dsh-codex-bridge/README.md) delivery folder**.
 It includes delegation, agent instructions, Windows sandbox readiness/repair/verification,
 and Node subprocess helpers. Copy it into another project to use the workflow.
+No build, packaging or npm install is needed for the bridge itself.
 
 ## Use the bridge
 
@@ -43,7 +44,7 @@ a successful model response alone is never acceptance.
 | Directory | Role |
 |---|---|
 | [`dsh-codex-bridge/`](dsh-codex-bridge/README.md) | Delivery: everything a new project needs to run the bridge, including operational setup probes |
-| [`development/`](development/README.md) | Bridge regression tests, packaging tools, designs and review records |
+| [`development/`](development/README.md) | Bridge regression tests, designs and review records |
 | [`demos/pascal-desk/`](demos/pascal-desk/README.md) | First verification project: a TypeScript Turbo Pascal inspired terminal editor |
 
 The delivery folder has no dependency on the other two directories. Maintainer tests and
@@ -60,8 +61,7 @@ historical development records are outside it. Future verification projects belo
 | Web, backend and native UI applications | **Not yet verified** |
 | Other DSH versions and unusual filesystem layouts | Require their own validation |
 
-Windows CI checks bridge regressions, demo tests and delivery packaging without DSH credentials.
-It does not replace the local DSH confinement/lifecycle checks. See the
+Verification is performed locally. See the
 [publication review](development/reviews.md) for exact commands and results, and the
 [development guide](development/README.md) for future validation work.
 
@@ -77,7 +77,9 @@ npm run demo
 Pascal Desk edits and saves text with a retro terminal interface. It has no Pascal compiler or
 debugger. Press **F1** for help and **Ctrl+Q** to quit.
 
-## Develop and package
+## Develop and verify locally
+
+These commands are for maintainers working on the bridge and demo:
 
 ```powershell
 npm ci --ignore-scripts
@@ -85,12 +87,10 @@ npm --prefix demos/pascal-desk ci --ignore-scripts
 npm test
 npm run test:windows
 npm run test:demo
-npm run package
 ```
 
-Packaging exports the allowlisted delivery files to `.artifacts/dsh-codex-bridge/` with
-`.artifacts/SHA256SUMS.txt`. It excludes local state, tests, history and demos and refuses to
-overwrite an existing export. See [CONTRIBUTING.md](CONTRIBUTING.md) for the review workflow.
+Distribute `dsh-codex-bridge/` directly from a clean checkout. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the review workflow.
 
 ## License
 

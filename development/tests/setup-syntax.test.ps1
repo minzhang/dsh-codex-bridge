@@ -1,6 +1,6 @@
 #Requires -Version 7.0
 # Syntax-check every PowerShell and Node script shipped by the bridge package,
-# plus the maintainer tests and packaging scripts under development/.
+# plus the maintainer tests under development/.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -11,8 +11,7 @@ $development = Join-Path $repoRoot 'development'
 $powerShellFiles = [Collections.Generic.List[string]]::new()
 foreach ($directory in @(
         (Join-Path $bridge 'windows'),
-        (Join-Path $development 'tests'),
-        (Join-Path $development 'scripts')
+        (Join-Path $development 'tests')
     )) {
     if (-not (Test-Path -LiteralPath $directory -PathType Container)) { continue }
     foreach ($item in (Get-ChildItem -LiteralPath $directory -Recurse -File -Filter '*.ps1')) {
@@ -37,8 +36,7 @@ foreach ($directory in @(
         (Join-Path $bridge 'node'),
         (Join-Path $bridge 'mcp'),
         (Join-Path $bridge 'windows\lib'),
-        (Join-Path $development 'tests'),
-        (Join-Path $development 'scripts')
+        (Join-Path $development 'tests')
     )) {
     if (-not (Test-Path -LiteralPath $directory -PathType Container)) { continue }
     foreach ($item in (Get-ChildItem -LiteralPath $directory -Recurse -File | Where-Object { $_.Extension -in @('.mjs', '.cjs') })) {

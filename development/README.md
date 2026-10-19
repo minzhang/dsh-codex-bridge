@@ -1,14 +1,14 @@
 # Bridge development and verification
 
 `../dsh-codex-bridge/` is the canonical runtime implementation and self-contained delivery.
-This directory holds its maintainer tests, packaging tools and development records. Do not
+This directory holds its maintainer tests and development records. Do not
 create a second runtime copy here. `../demos/pascal-desk/` is the first end-to-end verification
 project; future project types belong in separate `demos/` directories.
 
 ## Prerequisites
 
 The verified local environment is Windows, PowerShell 7, Node 22.14.0 and DSH desktop
-0.2.1-rc.2. Root packaging and tests have no npm dependencies. The demo supplies the pinned
+0.2.1-rc.2. Root tests have no npm dependencies. The demo supplies the pinned
 TypeScript development toolchain. From the repository root:
 
 ```powershell
@@ -18,7 +18,7 @@ npm --prefix demos/pascal-desk ci --ignore-scripts
 
 DSH integration additionally needs your own configured installation/authentication. See the
 [delivery onboarding guide](../dsh-codex-bridge/README.md). Credentials and profiles are not
-part of the repository or CI.
+part of the repository.
 
 ## Maintainer checks
 
@@ -56,20 +56,13 @@ repository. The temporary-WRITE_OWNER case prepares its own outer temporary cont
 inheritable Modify grant so the copied repository lacks that permission. The test retains the
 assertion that WRITE_OWNER is absent before repair, and fails if preparation cannot establish it.
 
-CI runs the ordinary Node suites, Windows non-DSH checks, demo typecheck/tests, declaration consumer
-and packaging on Windows. Actual DSH lifecycle checks run separately on a configured host.
+All checks are run manually. Actual DSH lifecycle checks need a configured Windows host.
 
-## Delivery export
+## Delivery
 
-```powershell
-npm run package
-```
-
-The allowlist in `delivery-files.json` defines the export; `scripts/package.mjs` copies exact bytes
-to `.artifacts/dsh-codex-bridge/` and writes `.artifacts/SHA256SUMS.txt`. The exported folder includes
-its own MIT license and operational setup probes. Local `.state/`, development/tests/history,
-demos and credentials are excluded. Missing/unexpected files and redirected paths cause failure.
-An existing export is never overwritten; preserve it if needed before removing generated output.
+Copy `dsh-codex-bridge/` directly from a clean checkout into the target project's root. It contains
+its own MIT license and operational setup probes. No build, export or packaging step is required.
+When copying from a used workspace, omit the locally generated `.state/` directory.
 
 Tests use disposable fixtures. Real setup evidence and publication logs stay ignored in `.state/`
 and `.dsh-runs/`. Keep permission backups where they were created; never distribute a backup to a
