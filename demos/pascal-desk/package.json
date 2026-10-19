@@ -1,0 +1,25 @@
+{
+  "name": "pascal-desk",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Small Turbo Pascal inspired terminal editor with local UTF-8 file support",
+  "type": "module",
+  "engines": {
+    "node": ">=22.14"
+  },
+  "scripts": {
+    "prestart": "npm run build",
+    "start": "node dist/src/cli.js",
+    "predemo": "npm run build",
+    "demo": "node dist/src/cli.js examples/hello.pas",
+    "check": "tsc --noEmit",
+    "build": "tsc",
+    "test": "npm run build && node --test dist/tests/editor.test.js dist/tests/reviewer-core.test.js dist/tests/files.test.js dist/tests/reviewer-files.test.js dist/tests/search.test.js dist/tests/reviewer-search.test.js dist/tests/app.test.js dist/tests/reviewer-controller.test.js dist/tests/reviewer-flows.test.js dist/tests/render.test.js dist/tests/reviewer-render.test.js dist/tests/cli.test.js dist/tests/reviewer-cli.test.js dist/tests/integration.test.js",
+    "test:sandbox": "npm run build && node --test --experimental-test-isolation=none dist/tests/editor.test.js dist/tests/reviewer-core.test.js dist/tests/files.test.js dist/tests/reviewer-files.test.js dist/tests/search.test.js dist/tests/reviewer-search.test.js dist/tests/app.test.js dist/tests/reviewer-controller.test.js dist/tests/reviewer-flows.test.js dist/tests/render.test.js dist/tests/reviewer-render.test.js dist/tests/cli.test.js dist/tests/reviewer-cli.test.js dist/tests/integration.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}

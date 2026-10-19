@@ -1,0 +1,2 @@
+# Local setup backups, reports, and logs. Diagnostics only; never source.
+.state/

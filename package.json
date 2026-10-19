@@ -1,0 +1,20 @@
+{
+  "name": "dsh-codex-bridge-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Maintainer workspace for the copyable DeepSeek Harness Codex bridge and its demo",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.14"
+  },
+  "scripts": {
+    "test": "node --test development/tests/capture-process.test.mjs development/tests/reviewer-node.test.mjs development/tests/run-tests.test.mjs development/tests/package.test.mjs",
+    "test:sandbox": "node dsh-codex-bridge/node/run-tests.mjs development/tests/capture-process.test.mjs development/tests/reviewer-node.test.mjs development/tests/run-tests.test.mjs development/tests/package.test.mjs",
+    "test:windows": "pwsh -NoProfile -File development/tests/setup-syntax.test.ps1 && pwsh -NoProfile -File development/tests/setup-boundaries.test.ps1 && pwsh -NoProfile -File development/tests/reviewer-acl.ps1",
+    "test:demo": "npm --prefix demos/pascal-desk run test",
+    "test:demo:sandbox": "npm --prefix demos/pascal-desk run test:sandbox",
+    "demo": "npm --prefix demos/pascal-desk run demo",
+    "package": "node development/scripts/package.mjs"
+  }
+}

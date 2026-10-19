@@ -1,0 +1,67 @@
+name: Windows bridge checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows / Node 22
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install demo dependencies
+        run: npm ci --ignore-scripts --prefix demos/pascal-desk
+
+      - name: Run bridge tests
+        run: npm test
+
+      - name: Run Windows syntax, boundary and ACL checks
+        run: npm run test:windows
+
+      - name: Typecheck demo
+        run: npm --prefix demos/pascal-desk run check
+
+      - name: Run demo tests
+        run: npm run test:demo
+
+      - name: Compile TypeScript helper consumer
+        run: >-
+          node demos/pascal-desk/node_modules/typescript/bin/tsc
+          --noEmit
+          --strict
+          --module NodeNext
+          --moduleResolution NodeNext
+          --target ES2022
+          --types node
+          --typeRoots demos/pascal-desk/node_modules/@types
+          development/tests/types-consumer.mts
+
+      - name: Export delivery package
+        run: npm run package
+
+      - name: Upload delivery package
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-codex-bridge-windows
+          path: |
+            .artifacts/dsh-codex-bridge
+            .artifacts/SHA256SUMS.txt
+          include-hidden-files: true
+          if-no-files-found: error
