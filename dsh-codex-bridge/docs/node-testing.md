@@ -72,6 +72,11 @@ target of this package's sandbox repair.
 an arbitrary ambient-temp directory. File-backed capture needs no new write allowance outside
 the workspace/private temp, and child processes inherit the existing restriction.
 
+The bridge's own reporting helper (`node/run-report.mjs`) follows the same rule: Git queries use
+file-backed stdio, not Node pipes. Tests that exercise the bridge's JSON result contract launch
+real Node, PowerShell, and Git subprocesses through file-backed capture, including MCP stdio.
+Sandbox suites must keep those actual-subprocess assertions rather than mocking them.
+
 ## Acceptance evidence
 
 DSH must run the project's build and complete sandbox suite and record exit codes, counts,

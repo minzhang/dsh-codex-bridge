@@ -155,11 +155,207 @@ pwsh -NoProfile -File dsh-codex-bridge/dsh-impl.ps1 -Spec docs/design/001-exampl
 ```
 
 The bridge passes the design to `dsh headless --patch <run-patch.yml> --json`, captures the
-event stream and final report, and returns DSH's exit code. It writes
-`.dsh-runs/<timestamp>-<run-id>-{prompt.md,events.jsonl,report.md,stderr.log,patch.yml}` in the
-target repository. These task artifacts are separate from the reusable package; no package
-script requires an old `.dsh-runs` folder. Output previews may be truncated, so save complete
-test logs and inspect their actual exit status rather than relying on the model's summary alone.
+event stream and final report, and returns the bridge exit code (preserving a nonzero DSH exit
+or timeout 124; 65 means a zero-exit run had a missing/invalid report). It writes
+`.dsh-runs/<timestamp>-<run-id>-{prompt.md,patch.yml,events.jsonl,stderr.log,report.md,result.json,final.txt,inventory-before.json,inventory-after.json}`
+in the target repository. These task artifacts are separate from the reusable package; no
+package script requires an old `.dsh-runs` folder. Output previews may be truncated, so save
+complete test logs and inspect their actual exit status rather than relying on the model's
+summary alone. Stdout keeps the existing `config:`, `dsh:`, `session:` and `report:` lines and
+adds `result:` with the repository-relative result file path; the four outcome dimensions and
+artifact pointers appear before the raw implementer message.
+
+### Run result contract
+
+`<run>-result.json` is the canonical machine-readable result (`schemaVersion: 1`). It keeps
+four dimensions separate:
+
+| Dimension | Meaning |
+|---|---|
+| `execution` | `SUCCEEDED`, `FAILED`, `TIMEOUT`, or `LAUNCH_FAILED`, plus original DSH exit code (nullable), bridge exit code, duration and effective settings |
+| `task` | The implementer's claim: `DONE`, `BLOCKED`, `PARTIAL`, or `UNKNOWN`, with summary, changes, checks, decisions and follow-ups. It is never acceptance |
+| `report` | `VALID`, `INVALID`, or `MISSING`, with validation errors/warnings and the raw final-message artifact |
+| `acceptance` | Always `PENDING` for a DSH report, with coverage `COMPLETE`, `INCOMPLETE`, or `NOT_DECLARED` and expected/missing check IDs |
+
+The result also contains `runId`, nullable `sessionId` plus `sessionProvenance`, the design
+path, timestamps, working-tree observations, diagnostics and artifact paths. `execution:
+SUCCEEDED` means only that the child exited normally with code zero; it says nothing about the
+report or task. A missing or invalid report after a zero exit makes the bridge exit **65**.
+Nonzero DSH exits are preserved, and a timeout exits **124**. A valid `BLOCKED` or `PARTIAL`
+report with normal execution exits zero and is a normal result. `DONE` with a declared check
+missing, failed, blocked, not run, or without a safe log is invalid.
+
+The implemented schema (all keys shown; artifact paths are repository-relative when inside the
+repository, otherwise absolute):
+
+```json
+{
+  "schemaVersion": 1,
+  "runId": "yyyyMMdd-HHmmss-xxxxxxxx",
+  "sessionId": "string or null",
+  "sessionProvenance": "EVENT | REQUESTED_FALLBACK | null",
+  "design": { "path": "relative/design.md" },
+  "timestamps": { "startedAt": "ISO-8601", "completedAt": "ISO-8601" },
+  "execution": {
+    "status": "SUCCEEDED | FAILED | TIMEOUT | LAUNCH_FAILED",
+    "originalExitCode": "integer or null",
+    "bridgeExitCode": "integer",
+    "durationMs": "integer",
+    "settings": {
+      "mode": "string",
+      "model": "string",
+      "reasoningEffort": "string",
+      "reasoningEffortSource": "string",
+      "codexReviewEdits": "string",
+      "codexReviewEditsSource": "string",
+      "configuration": "string",
+      "preflightObjectLimit": "integer",
+      "timeoutMinutes": "integer"
+    }
+  },
+  "task": {
+    "status": "DONE | BLOCKED | PARTIAL | UNKNOWN",
+    "claimedStatus": "DONE | BLOCKED | PARTIAL | null",
+    "summary": "string",
+    "changes": [{ "path": "string", "description": "string" }],
+    "checks": [{
+      "id": "string",
+      "command": "string",
+      "cwd": "string",
+      "status": "PASS | FAIL | NOT_RUN | BLOCKED",
+      "exitCode": "integer or null",
+      "logPath": "string or null",
+      "reason": "string",
+      "source": "IMPLEMENTER",
+      "logAvailability": "PRESENT | MISSING | NOT_PROVIDED | UNSAFE",
+      "additional": "boolean"
+    }],
+    "decisions": ["string"],
+    "followUps": ["string"]
+  },
+  "report": {
+    "validity": "VALID | INVALID | MISSING",
+    "errors": ["string"],
+    "warnings": ["string"],
+    "rawTextArtifact": "string or null",
+    "legacyStatus": "boolean"
+  },
+  "acceptance": {
+    "status": "PENDING",
+    "coverage": "COMPLETE | INCOMPLETE | NOT_DECLARED",
+    "expectedCheckIds": ["string"],
+    "missingCheckIds": ["string"],
+    "additionalCheckIds": ["string"]
+  },
+  "observations": {
+    "workingTree": {
+      "status": "OBSERVED | UNAVAILABLE",
+      "reason": "string or null",
+      "headBefore": "string or null",
+      "headAfter": "string or null",
+      "counts": { "NEWLY_CHANGED": 0, "PREEXISTING_CHANGED": 0, "PREEXISTING_UNCHANGED": 0, "UNKNOWN": 0 },
+      "paths": [{
+        "path": "string",
+        "classification": "NEWLY_CHANGED | PREEXISTING_CHANGED | PREEXISTING_UNCHANGED | UNKNOWN",
+        "changeKinds": ["string"],
+        "statusBefore": "string or null",
+        "statusAfter": "string or null",
+        "indexStatusBefore": "string or null",
+        "indexStatusAfter": "string or null",
+        "worktreeStatusBefore": "string or null",
+        "worktreeStatusAfter": "string or null",
+        "sha256Before": "string or null",
+        "sha256After": "string or null",
+        "indexShaBefore": "string or null",
+        "indexShaAfter": "string or null",
+        "indexModeBefore": "string or null",
+        "indexModeAfter": "string or null",
+        "linkIdentityBefore": "string or null",
+        "linkIdentityAfter": "string or null",
+        "unsafeBefore": "boolean",
+        "unsafeAfter": "boolean",
+        "typeBefore": "string or null",
+        "typeAfter": "string or null",
+        "presentBefore": "boolean or null",
+        "presentAfter": "boolean or null"
+      }],
+      "warnings": ["string"]
+    },
+    "toolCalls": "integer",
+    "toolErrors": "integer",
+    "tokens": { "input": "number", "output": "number" },
+    "implementerClaimedChanges": ["string"]
+  },
+  "diagnostics": {
+    "malformedEventLines": { "count": "integer", "lineNumbers": ["integer"] },
+    "lastValidEvent": { "type": "string", "phase": "string or null" },
+    "turnEnd": { "reason": "string or null", "error": "string or null" },
+    "error": "string or null",
+    "captureErrors": ["string"],
+    "inventoryErrors": ["string"],
+    "stderrArtifact": "string"
+  },
+  "artifacts": {
+    "prompt": "string",
+    "patch": "string",
+    "events": "string",
+    "stderr": "string",
+    "report": "string",
+    "result": "string",
+    "finalText": "string",
+    "inventoryBefore": "string",
+    "inventoryAfter": "string"
+  }
+}
+```
+
+`tokens` may be `null` when DSH reported no usage, and `lastValidEvent`/`turnEnd` may be
+`null`. `workingTree.counts` appears when observation is `OBSERVED`; `paths` is empty when it
+is `UNAVAILABLE`.
+
+The bridge asks DSH for one JSON object as its final message; legacy `STATUS:` prose is
+retained as raw diagnostic text but marked invalid. The bridge never executes commands named
+by that report and never treats log existence as proof that a command passed. Check entries
+are annotated `source: IMPLEMENTER` and `logAvailability: PRESENT | MISSING | NOT_PROVIDED |
+UNSAFE`. PASS/FAIL requires a safe, existing log file for a declared acceptance check; null
+logs stay explicitly `NOT_PROVIDED`. Log contents are not read automatically.
+
+### Declared acceptance checks
+
+A design may declare the expected command set between the exact markers below. Each entry
+needs a unique `id` plus `command` and `cwd` strings:
+
+```markdown
+<!-- dsh-acceptance-start -->
+[
+  {"id": "A1", "command": "npm run test:sandbox", "cwd": "."},
+  {"id": "A2", "command": "npm --prefix app run build", "cwd": "."}
+]
+<!-- dsh-acceptance-end -->
+```
+
+Malformed JSON or duplicate IDs stop the run before it writes artifacts or starts DSH. Designs
+without markers remain usable with coverage `NOT_DECLARED`. For a declared manifest, every ID
+must appear in the implementer checks, including `NOT_RUN`/`BLOCKED` entries with a reason.
+Coverage is ID coverage, not test success. A reported command must match the manifest after
+trimming surrounding whitespace only; arguments, quoted text, URLs and separators are not
+rewritten. `cwd` may additionally normalize slash separators. A different command does not
+satisfy an ID. Extra checks are allowed and marked additional.
+
+### Working-tree observations
+
+Before and after the run the bridge inventories relevant Git-tracked and untracked
+nonignored paths with NUL-safe status names, staged/index state, content SHA-256, type and
+presence. It classifies paths as `NEWLY_CHANGED`, `PREEXISTING_CHANGED`,
+`PREEXISTING_UNCHANGED`, or `UNKNOWN`, and includes additions, deletions, two-path renames,
+restoration to HEAD and staged-only changes. A file that was already dirty and changed again
+is `PREEXISTING_CHANGED`, even when porcelain status looks unchanged. These are observations
+during the run, not causal attribution to DSH; the implementer's changed-file claims remain
+separate. Before reading or hashing any path, every parent directory is checked with `lstat`;
+a link/reparse ancestor makes the path `UNKNOWN` with `unsafeBefore`/`unsafeAfter` set and a
+visible warning, and its content is never read or followed. Non-Git repositories report
+observation `UNAVAILABLE`; inventory failures are visible warnings. No file contents or
+snapshots are published.
 
 | Parameter | Default | Purpose |
 |---|---|---|
@@ -247,7 +443,7 @@ changes DSH's role or grants DSH commit/publication permission.
 | `docs/windows-sandbox.md` | Windows diagnosis, repair, verification and rollback method |
 | `windows/` | Portable Windows setup and confined probes |
 | `docs/node-testing.md` | Complete-suite test integration and TypeScript example |
-| `node/` | File-backed subprocess capture and no-worker test launcher |
+| `node/` | File-backed subprocess capture, no-worker test launcher, and canonical run-report helper |
 | `LICENSE` | MIT license, retained when copying the package |
 | `mcp/dsh-mcp-server.mjs` | Optional MCP interface to the bridge |
 | `.state/` | Ignored, machine/repository-specific setup evidence and backups |
@@ -270,6 +466,14 @@ configuration and built-in defaults apply. `0` is forwarded as an explicit unlim
 Tool-schema defaults are descriptive only and are not injected into project settings. Run
 Windows setup before using it. It calls the same bridge and preserves its preflight checks.
 Direct PowerShell invocation is the clearest route for setup diagnostics.
+
+For a launched run, the MCP tool returns the validated result object in `structuredContent`
+and a readable text summary (including the four dimensions and artifact pointers) in
+`content`. `isError` follows the bridge exit code. Only the exact
+`<repo>/.dsh-runs/<run>-result.json` artifact is read; paths outside that location and
+symlink/reparse escapes are rejected. A missing or invalid result after a normal bridge run
+is an error. Early argument, configuration or preflight failures keep their existing plain
+diagnostic response and do not fabricate a structured result. Dry runs do not create one.
 
 ## Verify a new project
 

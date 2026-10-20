@@ -72,8 +72,11 @@ project types need separate validation; do not run Windows ACL repair there.
 
    DSH implements and runs the complete acceptance checks, leaving changes uncommitted. Capture
    complete test logs and exit codes; truncated event previews are not test evidence.
-3. Inspect the run report and actual diff, including newly created files. `STATUS: DONE` means
-   ready for review. Independently run the acceptance checks and inspect actual counts/failures.
+3. Inspect the run result, report and actual diff, including newly created files. A valid
+   `task.status: DONE` means ready for review. The canonical `.dsh-runs/<run>-result.json`
+   keeps process outcome, implementer claim, report validity and pending independent
+   acceptance separate; a zero exit is not acceptance. Independently run the acceptance checks
+   and inspect actual counts/failures.
    On the affected Windows backend, DSH uses the complete sandbox-compatible suite and Codex also
    runs the ordinary suite on a compatible host. Before any post-review edit, read the effective
    `codexReviewEdits` from `bridge.config.json`, an explicit `-Config`, or the run report. The
@@ -91,8 +94,9 @@ project types need separate validation; do not run Windows ACL repair there.
    pwsh -NoProfile -File ./dsh-codex-bridge/dsh-impl.ps1 -Repo . -Mode workspace-write -Spec docs/design/001-example.md -Session session-<id-from-report> -Task 'Apply the reviewer feedback recorded in the design and rerun the acceptance checks.'
    ```
 
-   Review and verify the rework before accepting it. For `PARTIAL` or `BLOCKED`, inspect the exact
-   cause, revise the design or resolve setup as appropriate, and ask only for genuinely missing
-   decisions. Do not blindly repeat a failed run or silently take over production implementation.
+   Review and verify the rework before accepting it. For a valid `PARTIAL` or `BLOCKED` result,
+   inspect the exact cause, revise the design or resolve setup as appropriate, and ask only for
+   genuinely missing decisions. Do not blindly repeat a failed run or silently take over
+   production implementation. Legacy `STATUS:` prose results are invalid diagnostic text.
 5. Report accepted behavior, DSH and Codex checks, rework, and remaining limitations. Honor requested
    pauses before the next phase. Commit or publish only within the user's existing authorization.

@@ -43,6 +43,12 @@ worker-isolated suites. Passing the lightweight setup probe alone does not estab
 `bridge-config.test.mjs` runs the bridge and MCP server through real PowerShell/Node children
 with file-backed capture, covering configuration defaults and overrides, generated patches,
 prompt policy, preflight object-limit forwarding, and subprocess forwarding.
+`bridge-report.test.mjs` covers the canonical JSON result, DONE/BLOCKED/PARTIAL validation,
+bridge exit semantics for invalid, missing, nonzero, timeout and launch-failure runs, declared
+acceptance manifest coverage, check-log availability and traversal/link refusal, real Git
+working-tree observations (dirty-again, unchanged dirty, new, deleted, renamed, restored and
+staged-only paths), non-Git fallback, and MCP text/`structuredContent` with safe artifact
+reading. It also uses disposable fixtures only.
 `setup-object-count.test.ps1` creates a unique disposable fixture and exercises real tree
 enumeration and restore-manifest loading at exactly 28,000 objects, at 28,001 with default-cap
 rejection, and at 28,001 with a 50,000 explicit cap, plus explicit zero/unlimited, small finite
@@ -87,6 +93,8 @@ new repository or restore it against another tree.
 - [Publication design](design/003-public-repository.md) and [current review](reviews.md).
 - [Configurable defaults](design/004-default-configuration.md) and the superseding
   [28,000-object default and overrides](design/005-object-count-default.md).
+- [Reliable one-way reports](design/006-reliable-one-way-reports.md): canonical results,
+  declared check coverage, working-tree observations and report validation.
 - Earlier bridge designs in `design/001-*` and `design/002-*` record the original implementation.
 - `history/` contains sanitized historical reports. Paths/test counts there describe the layout
   and product stage at the time; follow current READMEs for commands.

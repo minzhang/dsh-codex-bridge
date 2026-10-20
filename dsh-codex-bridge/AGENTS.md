@@ -56,8 +56,9 @@ Work in this repository is split between two agents. Do not blur the roles.
    For a follow-up round on the same work, pass the `session:` id from the previous run
    with `-Session` and describe the correction with `-Task`.
 3. The implementation agent works in the repository, runs the acceptance checks, and
-   leaves the changes uncommitted. It reports `STATUS: DONE | BLOCKED | PARTIAL`.
-4. The design agent reviews `git diff` plus the run report in `.dsh-runs/`, reruns the
+   leaves the changes uncommitted. It returns one JSON implementer report with status
+   `DONE`, `BLOCKED` or `PARTIAL`; the bridge writes the canonical result and report.
+4. The design agent reviews `git diff` plus the run result/report in `.dsh-runs/`, reruns the
    acceptance checks itself, and then either merges or delegates a corrective round.
 
 ## Codex review edits policy
@@ -86,21 +87,28 @@ priority. Neither setting changes DSH's role or grants DSH commit/publication pe
   their own disposable temp fixtures as documented; no unrelated outside files may be changed.
 - Keep diffs focused on the design; no opportunistic refactors, no formatting-only churn,
   no new dependencies the design does not name.
-- A `STATUS: BLOCKED` report is a success, not a failure: escalate the exact questions
-  rather than guessing at product behavior.
+- A valid `BLOCKED` implementer report is a success, not a failure: escalate the exact
+  questions rather than guessing at product behavior. A legacy `STATUS:` prose response is
+  invalid diagnostic text and is never accepted silently.
 - The design document is the source of truth. If implementation reveals the design is
   wrong, stop and revise the design first.
 
 ## Status vocabulary
 
-| Report line | Meaning for the design agent |
+| Result | Meaning for the design agent |
 |---|---|
-| `STATUS: DONE` | Review the diff and run the acceptance checks |
-| `STATUS: PARTIAL` | Something was left unfinished; read `FOLLOW-UPS` before continuing |
-| `STATUS: BLOCKED` | A material decision is missing; answer in the design doc, then redelegate |
+| `task.status: DONE` + `report.validity: VALID` | Review the diff and run the acceptance checks independently |
+| `task.status: PARTIAL` | Something was left unfinished; read `followUps` before continuing |
+| `task.status: BLOCKED` | A material decision is missing; answer in the design doc, then redelegate |
+| `report.validity: INVALID` or `MISSING` | Do not accept the claim; inspect `report.errors` and the raw final artifact |
+| `acceptance.status: PENDING` | Always true for a DSH report; independent acceptance has not occurred |
+
+The result file is authoritative over prose: execution outcome, implementer claim, report
+validity and acceptance are separate dimensions. A zero process exit does not make the task
+accepted.
 
 ## Notes
 
-- `.dsh-runs/` holds per-run artifacts (prompt, event stream, report). Treat it as local
-  scratch space, not as a source of truth.
+- `.dsh-runs/` holds per-run artifacts (prompt, patch, event stream, result, raw final text,
+  report, inventories). Treat it as local scratch space, not as a source of truth.
 - One design document should be one reviewable change set, roughly 30–90 minutes of work.

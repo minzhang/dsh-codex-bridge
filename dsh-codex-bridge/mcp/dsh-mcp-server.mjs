@@ -11,11 +11,20 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { closeSync, openSync, readFileSync, unlinkSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  unlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 
+import { readResultArtifact } from '../node/run-report.mjs';
+
 const SERVER_NAME = 'dsh-bridge';
-const SERVER_VERSION = '0.1.0';
+const SERVER_VERSION = '0.2.0';
 const SUPPORTED_PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -28,9 +37,11 @@ const TOOL = {
   description:
     'Delegate ONE implementation task to DeepSeek Harness (dsh). Pass the path to an approved ' +
     'design document; the implementer edits the repository, runs the acceptance checks it finds ' +
-    'in the design, and returns a STATUS/CHANGES/CHECKS/DECISIONS/FOLLOW-UPS report. It cannot ' +
-    'ask questions: a BLOCKED status means the design is missing a decision. Changes stay ' +
-    'uncommitted in the working tree for review.',
+    'in the design, and returns one JSON implementer report. The bridge writes a canonical ' +
+    'schemaVersion 1 result separating process outcome, implementer claims, report validity and ' +
+    'pending independent acceptance. It returns that validated result in structuredContent and ' +
+    'a readable text summary. It cannot ask questions: a valid BLOCKED result means the design ' +
+    'is missing a decision. Changes stay uncommitted in the working tree for review.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -176,6 +187,49 @@ function invalidToolArgument(message) {
   return { content: [{ type: 'text', text: message }], isError: true };
 }
 
+function toolError(message) {
+  return { content: [{ type: 'text', text: message }], isError: true };
+}
+
+function findRepositoryRoot(start) {
+  let current = resolve(start);
+  for (;;) {
+    if (existsSync(join(current, '.git'))) return current;
+    const parent = dirname(current);
+    if (parent === current) return resolve(start);
+    current = parent;
+  }
+}
+
+function comparablePath(value) {
+  try {
+    const real = realpathSync.native(value);
+    return process.platform === 'win32' ? real.toLowerCase() : real;
+  } catch {
+    const resolved = resolve(value);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  }
+}
+
+function summaryLine(stdout, prefix) {
+  // Only inspect the bridge's summary prefix. The raw implementer message is untrusted
+  // and could contain text that looks like a result pointer.
+  const summary = stdout.split(/^--- implementer final message/m)[0];
+  const line = summary.split(/\r?\n/).find((candidate) => candidate.startsWith(prefix));
+  return line ? line.slice(prefix.length).trim() : '';
+}
+
+function canonicalResultSummary(result, relativePath) {
+  return [
+    `execution: ${result.execution.status} | task: ${result.task.status} (implementer claim) | ` +
+      `report: ${result.report.validity} | acceptance: ${result.acceptance.status}`,
+    `acceptance coverage: ${result.acceptance.coverage} | expected ${result.acceptance.expectedCheckIds.length} | ` +
+      `missing ${result.acceptance.missingCheckIds.length}`,
+    `result: ${relativePath}`,
+    `report: ${result.artifacts.report}`,
+  ].join('\n');
+}
+
 function validateBridgeArguments(args) {
   if (args.config !== undefined) {
     if (typeof args.config !== 'string' || args.config.trim() === '') {
@@ -229,8 +283,73 @@ async function callTool(name, args) {
   const result = await runBridge(cli);
   const body = result.stdout.trim() || '(no output)';
   const tail = result.stderr.trim() ? `\n\n[bridge stderr]\n${result.stderr.trim()}` : '';
+  const combined = `${body}${tail}`;
+  const resultLine = summaryLine(result.stdout, 'result: ');
+
+  if (!resultLine) {
+    if (result.code === 0) {
+      return toolError(
+        'the bridge exited 0 but did not report a result artifact; this run is not a valid success.\n\n' +
+          combined,
+      );
+    }
+    // Early argument, configuration or preflight failures retain their existing plain
+    // diagnostic response and do not produce a structured result.
+    return { content: [{ type: 'text', text: combined }], isError: true };
+  }
+
+  let repoRoot = args.repo ? resolve(String(args.repo)) : findRepositoryRoot(process.cwd());
+  const reportedRoot = summaryLine(result.stdout, 'repo-root: ');
+  if (reportedRoot) {
+    const reported = resolve(reportedRoot);
+    if (args.repo) {
+      if (comparablePath(reported) !== comparablePath(repoRoot)) {
+        return toolError(
+          `the bridge reported repository root "${reported}" but the selected repository is "${repoRoot}".\n\n` +
+            combined,
+        );
+      }
+    } else {
+      const workingRoot = resolve(process.cwd());
+      if (
+        comparablePath(reported) !== comparablePath(repoRoot) &&
+        comparablePath(reported) !== comparablePath(workingRoot)
+      ) {
+        return toolError(
+          `the bridge reported repository root "${reported}" outside the selected working location.\n\n` +
+            combined,
+        );
+      }
+      repoRoot = reported;
+    }
+  }
+
+  const artifact = readResultArtifact(repoRoot, resultLine);
+  if (artifact.error) {
+    return toolError(
+      `the bridge run did not produce a readable, safe result artifact: ${artifact.error}\n\n` + combined,
+    );
+  }
+  if (artifact.result.execution.bridgeExitCode !== result.code) {
+    return toolError(
+      `the result artifact reports bridge exit ${artifact.result.execution.bridgeExitCode} ` +
+        `but the bridge exited ${result.code}; refusing the inconsistent result.\n\n${combined}`,
+    );
+  }
+  if (result.code === 0 && artifact.result.report.validity !== 'VALID') {
+    return toolError(
+      `the bridge exited 0 but the result report validity is ${artifact.result.report.validity}; ` +
+        `refusing to present this as success.\n\n${combined}`,
+    );
+  }
+
+  const text = `${body}\n\n[canonical result]\n${canonicalResultSummary(
+    artifact.result,
+    artifact.relativePath,
+  )}${tail}`;
   return {
-    content: [{ type: 'text', text: `${body}${tail}` }],
+    content: [{ type: 'text', text }],
+    structuredContent: artifact.result,
     isError: result.code !== 0,
   };
 }

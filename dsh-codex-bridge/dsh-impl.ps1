@@ -13,9 +13,15 @@
     <run>-prompt.md      the exact prompt sent to dsh
     <run>-patch.yml      the per-run agent-default-model overlay passed with --patch
     <run>-events.jsonl   the --json event stream (session, tool_call, tool_result, final)
-    <run>-report.md      a reviewer-oriented summary
+    <run>-report.md      a reviewer-oriented summary generated from the canonical result
+    <run>-result.json    the canonical machine-readable result (schemaVersion 1)
+    <run>-final.txt      the raw implementer final message (untrusted)
+    <run>-inventory-before.json / <run>-inventory-after.json
+                         file metadata captured for working-tree observations
     <run>-stderr.log     dsh stderr
-  where <run> is a timestamp plus a unique suffix.
+  where <run> is a timestamp plus a unique suffix. The result contract separates process
+  outcome, implementer claims, report validity and independent acceptance; a completed
+  process is never by itself acceptance.
 
 .PARAMETER Spec
   Path to the design document. Relative paths resolve against the repository root.
@@ -134,32 +140,48 @@ Open a NEW terminal (PATH changes are not visible to already-running shells), or
 '@
 }
 
-function Get-WorkingTreeState {
-    param([string]$Root)
+function Resolve-ReportHelper {
+    param([string]$BridgeRoot)
 
-    $git = Get-Command git -ErrorAction SilentlyContinue
-    if (-not $git -or -not (Test-Path -LiteralPath (Join-Path $Root '.git'))) {
-        return @{ IsGit = $false; Head = ''; Status = @(); DiffStat = '' }
+    $nodeCommand = Get-Command node -ErrorAction SilentlyContinue
+    if (-not $nodeCommand) {
+        throw @'
+Node.js runtime not found. The bridge uses the bundled node/run-report.mjs reporting
+helper (and Node 22.14+ is a documented prerequisite). Install Node.js or put node on
+PATH, then re-run the bridge.
+'@
     }
-    $head = (& git -C $Root rev-parse --short HEAD 2>$null)
-    $status = @(& git -C $Root status --porcelain 2>$null)
-    $stat = (& git -C $Root diff --stat 2>$null) -join "`n"
-    return @{ IsGit = $true; Head = "$head".Trim(); Status = $status; DiffStat = $stat }
+    $helper = Join-Path $BridgeRoot 'node\run-report.mjs'
+    if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) {
+        throw "Report helper not found: $helper"
+    }
+    return @{
+        Node = $nodeCommand.Source
+        Helper = (Resolve-Path -LiteralPath $helper).Path
+    }
 }
 
-function Get-TotalUsage {
-    param($Events)
+function Invoke-ReportHelper {
+    param(
+        [string]$NodePath,
+        [string]$HelperPath,
+        [string[]]$HelperArguments
+    )
 
-    $inTokens = 0; $outTokens = 0; $seen = $false
-    foreach ($event in $Events) {
-        if ($event.type -ne 'status' -or $event.phase -ne 'step_end') { continue }
-        if (-not $event.PSObject.Properties['usage']) { continue }
-        $seen = $true
-        if ($event.usage.PSObject.Properties['inputTokens']) { $inTokens += [long]$event.usage.inputTokens }
-        if ($event.usage.PSObject.Properties['outputTokens']) { $outTokens += [long]$event.usage.outputTokens }
+    # A caller may set NODE_OPTIONS for its own child-process fixtures; the reporting
+    # helper must run as plain Node, so hide that setting only for this invocation.
+    $previousNodeOptions = $env:NODE_OPTIONS
+    $exitCode = 1
+    try {
+        Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
+        $output = @(& $NodePath $HelperPath @HelperArguments 2>&1)
+        $exitCode = $LASTEXITCODE
     }
-    if (-not $seen) { return $null }
-    return @{ Input = $inTokens; Output = $outTokens }
+    finally {
+        if ($null -ne $previousNodeOptions) { $env:NODE_OPTIONS = $previousNodeOptions }
+    }
+    $text = @($output | ForEach-Object { [string]$_ }) -join "`n"
+    return @{ ExitCode = [int]$exitCode; Output = $text }
 }
 
 function Stop-OrphanDsh {
@@ -338,6 +360,22 @@ $design = [IO.File]::ReadAllText($specPath, [Text.UTF8Encoding]::new($false))
 
 $relativeSpec = [IO.Path]::GetRelativePath($repoRoot, $specPath)
 
+$reportRuntime = Resolve-ReportHelper -BridgeRoot $PSScriptRoot
+$helperManifest = Invoke-ReportHelper -NodePath $reportRuntime.Node -HelperPath $reportRuntime.Helper `
+    -HelperArguments @('manifest', '--design', $specPath)
+if ($helperManifest.ExitCode -ne 0) {
+    throw "Design acceptance manifest is invalid: $($helperManifest.Output.Trim())"
+}
+try {
+    $acceptanceManifest = $helperManifest.Output.Trim() | ConvertFrom-Json -ErrorAction Stop
+}
+catch {
+    throw 'Design acceptance manifest could not be read from the reporting helper.'
+}
+if ($null -eq $acceptanceManifest -or -not $acceptanceManifest.PSObject.Properties['declared']) {
+    throw 'Design acceptance manifest helper returned an unexpected result.'
+}
+
 # --------------------------------------------------------------------------- Windows preflight
 
 $isWindowsHost = [System.OperatingSystem]::IsWindows()
@@ -409,19 +447,41 @@ Run configuration:
 <WINDOWS_SANDBOX_NOTE>
 
 Operating rules (non-negotiable):
-- This is a non-interactive run. Never call ask_user_question, never wait for approval, never ask a human to confirm anything. If the design leaves a material decision open, stop and print a final report whose first line is `STATUS: BLOCKED` followed by the exact questions. Do not guess on product behavior.
+- This is a non-interactive run. Never call ask_user_question, never wait for approval, never ask a human to confirm anything. If the design leaves a material decision open, stop and return the JSON report with status "BLOCKED" and exact questions in summary or followUps. Do not guess on product behavior.
 - Work only inside the repository root. Read the existing code before changing it.
 - Do not commit, do not push, do not create or switch branches, do not amend or rewrite history. Leave every change in the working tree for review.
 - Do not modify the design document.
 - Keep the diff focused: implement what the design requires. No opportunistic refactors, no formatting-only churn, no new dependencies unless the design names them.
 - Run the acceptance checks the design names. If it names none, run the repository's own test and lint commands for the code you touched, and report exactly what you ran.
 
-Final report format (your last message, plain text, no code fences):
-STATUS: DONE | BLOCKED | PARTIAL
-CHANGES: one line per file, "path - what changed"
-CHECKS: each command you ran, pass/fail, and the one output line that proves it
-DECISIONS: choices you made where the design was silent, and why
-FOLLOW-UPS: what the reviewer must verify or decide next
+Final report format (your last message must be exactly one JSON object, with no Markdown fences):
+{
+  "schemaVersion": 1,
+  "status": "DONE",
+  "summary": "Concrete result ready for review",
+  "changes": [{"path": "relative/file", "description": "What changed"}],
+  "checks": [{
+    "id": "A1",
+    "command": "actual command",
+    "cwd": ".",
+    "status": "PASS",
+    "exitCode": 0,
+    "logPath": ".dsh-runs/checks/a1.log",
+    "reason": ""
+  }],
+  "decisions": [],
+  "followUps": []
+}
+
+JSON report rules:
+- schemaVersion is numeric 1. status is DONE, BLOCKED or PARTIAL. Every key shown above is required; changes, checks, decisions and followUps may be empty arrays.
+- Check status is PASS, FAIL, NOT_RUN or BLOCKED. PASS requires exitCode 0. FAIL requires a nonzero integer exitCode. NOT_RUN and BLOCKED require exitCode null and a nonempty reason. Check IDs must be unique and nonempty.
+- cwd is a repository-relative directory. Paths, including logPath, must stay inside the repository. logPath is a repository-relative file or null. Save real command logs and use them; a null log is reported as NOT_PROVIDED and a missing or unsafe log is reported as MISSING or UNSAFE.
+- If the design declares acceptance checks, include every declared check ID in checks with the declared command and cwd. Only surrounding whitespace may differ for a command; cwd may also use either slash style. Do not rewrite command arguments, quoted text or URLs. Include unrun or blocked checks with NOT_RUN or BLOCKED and a reason instead of omitting them. Extra checks are allowed and are marked additional. DONE with a declared check that is missing, not run, blocked, failing, or without a safe log is invalid.
+- BLOCKED requires a nonempty summary or followUp describing the blocker.
+- The bridge annotates source and log availability itself; do not add those fields. The bridge never runs commands from your report and never treats log existence as test evidence.
+- Working-tree observations are taken by the bridge before and after the run. Do not claim causal attribution to DSH; keep your changed-file claims in changes.
+- A legacy STATUS: DONE/BLOCKED/PARTIAL prose response is invalid and is retained only as raw diagnostic text.
 '@
 
 $prompt = $promptTemplate.Replace('<REPO>', $repoRoot).
@@ -450,6 +510,11 @@ $streamFile = Join-Path $runDir "$runName-events.jsonl"
 $errFile = Join-Path $runDir "$runName-stderr.log"
 $reportFile = Join-Path $runDir "$runName-report.md"
 $patchFile = Join-Path $runDir "$runName-patch.yml"
+$resultFile = Join-Path $runDir "$runName-result.json"
+$finalFile = Join-Path $runDir "$runName-final.txt"
+$inventoryBeforeFile = Join-Path $runDir "$runName-inventory-before.json"
+$inventoryAfterFile = Join-Path $runDir "$runName-inventory-after.json"
+$factsFile = Join-Path $runDir "$runName-result-input.json"
 $patchYaml = @(
     '- id: agent-default-model'
     '  config:'
@@ -486,9 +551,24 @@ if ($DryRun) {
     return
 }
 
-$before = Get-WorkingTreeState -Root $repoRoot
-if ($before.IsGit -and $before.Status.Count -gt 0) {
-    Write-Warning ("Working tree already has {0} changed path(s) before this run; the run's diff will be mixed with them. HEAD {1}." -f $before.Status.Count, $before.Head)
+# --------------------------------------------------------------------------- observe before
+
+$inventoryErrors = @()
+$beforeInventoryResult = Invoke-ReportHelper -NodePath $reportRuntime.Node -HelperPath $reportRuntime.Helper `
+    -HelperArguments @('inventory', '--root', $repoRoot, '--out', $inventoryBeforeFile)
+if ($beforeInventoryResult.ExitCode -ne 0) {
+    $inventoryErrors += "before inventory failed: $($beforeInventoryResult.Output.Trim())"
+}
+else {
+    try {
+        $beforeInventory = [IO.File]::ReadAllText($inventoryBeforeFile, $utf8) | ConvertFrom-Json -ErrorAction Stop
+        if ($beforeInventory.status -eq 'OBSERVED' -and @($beforeInventory.paths).Count -gt 0) {
+            Write-Warning ("Working tree already has {0} changed path(s) before this run; they will be classified as PREEXISTING_* observations, not attributed to DSH." -f @($beforeInventory.paths).Count)
+        }
+    }
+    catch {
+        $inventoryErrors += 'before inventory could not be parsed'
+    }
 }
 
 $dshProcessesBefore = @(Get-Process -Name 'DeepSeek Harness' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
@@ -501,159 +581,165 @@ $env:DSH_PERMISSION_MODE = $Mode
 # dsh resolves its workspace from the process working directory, so run from the repo root.
 Set-Location -LiteralPath $repoRoot
 
-$job = Start-Job -ArgumentList $dshPath, $dshArgs, $promptFile, $streamFile, $errFile, $repoRoot -ScriptBlock {
-    param($DshPath, $DshArgs, $PromptFile, $StreamFile, $ErrorFile, $RepoRoot)
-
-    $ErrorActionPreference = 'Continue'
-    Set-Location -LiteralPath $RepoRoot
-    $OutputEncoding = [Text.UTF8Encoding]::new($false)
-    $utf8 = [Text.UTF8Encoding]::new($false)
-
-    $prompt = [IO.File]::ReadAllText($PromptFile, $utf8)
-    $prompt | & $DshPath @DshArgs 2> $ErrorFile | Set-Content -LiteralPath $StreamFile -Encoding utf8
-    return $LASTEXITCODE
-}
-
 $timedOut = $false
-if (-not (Wait-Job -Job $job -Timeout ($TimeoutMinutes * 60))) {
-    $timedOut = $true
-    Stop-Job -Job $job
-    [void](Stop-OrphanDsh -Since $startedAt -Preexisting $dshProcessesBefore)
-    $exitCode = 124
-}
-else {
-    $received = Receive-Job -Job $job
-    $exitCode = if ($null -ne $received) { [int]($received | Select-Object -Last 1) } else { 1 }
-}
-Remove-Job -Job $job -Force | Out-Null
-$duration = (Get-Date) - $startedAt
+$launchFailed = $false
+$exitCode = $null
+$jobState = 'Unknown'
+$captureErrors = @()
+$job = $null
+try {
+    $job = Start-Job -ArgumentList $dshPath, $dshArgs, $promptFile, $streamFile, $errFile, $repoRoot -ScriptBlock {
+        param($DshPath, $DshArgs, $PromptFile, $StreamFile, $ErrorFile, $RepoRoot)
 
-# --------------------------------------------------------------------------- parse the stream
+        $ErrorActionPreference = 'Continue'
+        Set-Location -LiteralPath $RepoRoot
+        $OutputEncoding = [Text.UTF8Encoding]::new($false)
+        $utf8 = [Text.UTF8Encoding]::new($false)
 
-$events = @()
-foreach ($line in [IO.File]::ReadAllLines($streamFile, $utf8)) {
-    if ([string]::IsNullOrWhiteSpace($line)) { continue }
-    try { $events += ($line | ConvertFrom-Json -Depth 32) } catch { }
-}
-
-$sessionId = ''
-$sessionEvent = $events | Where-Object { $_.type -eq 'session' } | Select-Object -First 1
-if ($sessionEvent) { $sessionId = $sessionEvent.sessionId }
-
-$finalEvent = $events | Where-Object { $_.type -eq 'final' } | Select-Object -Last 1
-$finalText = if ($finalEvent) { [string]$finalEvent.text } else { '' }
-
-$errorEvent = $events | Where-Object { $_.type -eq 'error' } | Select-Object -Last 1
-$errorText = if ($errorEvent) { [string]$errorEvent.message } else { '' }
-
-$turnEnd = $events | Where-Object { $_.type -eq 'status' -and $_.phase -eq 'turn_end' } | Select-Object -Last 1
-$turnReason = ''
-if ($turnEnd -and $turnEnd.PSObject.Properties['reason']) {
-    $reason = $turnEnd.reason
-    $turnReason = if ($reason.PSObject.Properties['kind']) { [string]$reason.kind } else { "$reason" }
-    if ($reason.PSObject.Properties['error'] -and $reason.error.PSObject.Properties['message']) {
-        $turnReason = "$turnReason - $($reason.error.message)"
+        $prompt = [IO.File]::ReadAllText($PromptFile, $utf8)
+        $prompt | & $DshPath @DshArgs 2> $ErrorFile | Set-Content -LiteralPath $StreamFile -Encoding utf8
+        return $LASTEXITCODE
     }
 }
-
-$toolCalls = @($events | Where-Object { $_.type -eq 'tool_call' })
-$toolFailures = @($events | Where-Object { $_.type -eq 'tool_result' -and $_.status -eq 'error' })
-$usage = Get-TotalUsage -Events $events
-
-$after = Get-WorkingTreeState -Root $repoRoot
-$runDirName = Split-Path -Leaf $runDir
-$changed = @()
-if ($after.IsGit) {
-    $changed = @($after.Status | Where-Object { $_ -and ($_ -notmatch [regex]::Escape($runDirName)) })
-}
-else {
-    $changed = @($toolCalls | ForEach-Object {
-            if ($_.input.PSObject.Properties['path']) { [string]$_.input.path }
-            elseif ($_.input.PSObject.Properties['file_path']) { [string]$_.input.file_path }
-        } | Where-Object { $_ } | Sort-Object -Unique)
+catch {
+    $launchFailed = $true
+    $jobState = 'Failed'
+    $captureErrors += "could not start dsh process: $($_.Exception.Message)"
 }
 
-# Split out paths that were already dirty before the run, so the reviewer sees only this run's diff.
-$beforePaths = @{}
-foreach ($line in $before.Status) {
-    if ($line -and $line.Length -gt 3) { $beforePaths[$line.Substring(3).Trim()] = $true }
+if ($job) {
+    if (-not (Wait-Job -Job $job -Timeout ($TimeoutMinutes * 60))) {
+        $timedOut = $true
+        Stop-Job -Job $job
+        [void](Stop-OrphanDsh -Since $startedAt -Preexisting $dshProcessesBefore)
+        $jobState = [string]$job.State
+        $exitCode = $null
+    }
+    else {
+        $received = @(Receive-Job -Job $job -ErrorAction SilentlyContinue)
+        $jobState = [string]$job.State
+        foreach ($jobError in @($job.ChildJobs | ForEach-Object { $_.Error } | ForEach-Object { [string]$_ } | Where-Object { $_ })) {
+            $captureErrors += $jobError
+        }
+        $receivedValues = @($received | Where-Object { $null -ne $_ })
+        if ($receivedValues.Count -gt 0) {
+            $exitCode = [int]($receivedValues | Select-Object -Last 1)
+        }
+        if ($null -eq $exitCode -or $jobState -eq 'Failed') {
+            $launchFailed = $true
+        }
+    }
+    Remove-Job -Job $job -Force | Out-Null
 }
-$runChanged = @($changed | Where-Object { $_.Length -gt 3 -and -not $beforePaths.ContainsKey($_.Substring(3).Trim()) })
+$completedAt = Get-Date
 
-$stderrTail = @()
-if (Test-Path -LiteralPath $errFile) {
-    $stderrTail = @([IO.File]::ReadAllLines($errFile, $utf8) | Where-Object { $_ } | Select-Object -Last 12)
+# --------------------------------------------------------------------------- observe after
+
+$afterInventoryArguments = @('inventory', '--root', $repoRoot, '--out', $inventoryAfterFile)
+if (Test-Path -LiteralPath $inventoryBeforeFile -PathType Leaf) {
+    $afterInventoryArguments += @('--include', $inventoryBeforeFile)
+}
+$afterInventoryResult = Invoke-ReportHelper -NodePath $reportRuntime.Node -HelperPath $reportRuntime.Helper `
+    -HelperArguments $afterInventoryArguments
+if ($afterInventoryResult.ExitCode -ne 0) {
+    $inventoryErrors += "after inventory failed: $($afterInventoryResult.Output.Trim())"
 }
 
-$status = if ($timedOut) { 'TIMEOUT' } elseif ($exitCode -eq 0) { 'COMPLETED' } elseif ($errorText) { 'ERROR' } else { 'FAILED' }
+# --------------------------------------------------------------------------- canonical result
 
-# --------------------------------------------------------------------------- report
+$settings = [ordered]@{
+    mode = $Mode
+    model = 'deepseek-official/deepseek-flash'
+    reasoningEffort = $reasoningEffort
+    reasoningEffortSource = $reasoningEffortSource
+    codexReviewEdits = $codexReviewEdits
+    codexReviewEditsSource = $codexReviewEditsSource
+    configuration = $configSource
+    preflightObjectLimit = $MaxObjects
+    timeoutMinutes = $TimeoutMinutes
+}
+$facts = [ordered]@{
+    schemaVersion = 1
+    runId = $runName
+    repoRoot = $repoRoot
+    designPath = $relativeSpec
+    startedAt = $startedAt.ToUniversalTime().ToString('o')
+    completedAt = $completedAt.ToUniversalTime().ToString('o')
+    exitCode = $(if ($null -ne $exitCode) { [int]$exitCode } else { $null })
+    timedOut = $timedOut
+    launchFailed = $launchFailed
+    jobState = $jobState
+    captureErrors = @($captureErrors)
+    requestedSession = $Session
+    manifest = $acceptanceManifest
+    settings = $settings
+    inventoryErrors = @($inventoryErrors)
+    artifacts = [ordered]@{
+        prompt = $promptFile
+        patch = $patchFile
+        events = $streamFile
+        stderr = $errFile
+        report = $reportFile
+        result = $resultFile
+        finalText = $finalFile
+        inventoryBefore = $inventoryBeforeFile
+        inventoryAfter = $inventoryAfterFile
+    }
+}
+try {
+    [IO.File]::WriteAllText($factsFile, ($facts | ConvertTo-Json -Depth 20), $utf8)
+}
+catch {
+    Write-Output "result-error: could not write reporting input: $($_.Exception.Message)"
+    Write-Output "artifacts: prompt $promptFile | patch $patchFile | events $streamFile | stderr $errFile"
+    exit 1
+}
 
-$changeLines = if ($runChanged.Count) { ($runChanged | ForEach-Object { "- $_" }) -join "`n" } else { '(no changed paths detected)' }
-$preExisting = @($changed | Where-Object { $runChanged -notcontains $_ })
-$preExistingLines = if ($preExisting.Count) { ($preExisting | ForEach-Object { "- $_" }) -join "`n" } else { '(none)' }
-$usageLine = if ($usage) { "{0:N0} in / {1:N0} out tokens" -f $usage.Input, $usage.Output } else { 'not reported' }
-$diagnostics = if ($turnReason) { $turnReason } elseif ($errorText) { $errorText } else { '(none)' }
-$stderrBlock = if ($stderrTail.Count) { ($stderrTail -join "`n") } else { '(empty)' }
-
-$report = @"
-# dsh implementation run $runName
-
-| field | value |
-|---|---|
-| status | $status |
-| exit code | $exitCode |
-| session | $sessionId |
-| design doc | $relativeSpec |
-| permission mode | $Mode |
-| preflight object limit | $MaxObjects |
-| model | deepseek-official/deepseek-flash |
-| reasoning effort | $reasoningEffort (source: $reasoningEffortSource) |
-| Codex review edits | $codexReviewEdits (source: $codexReviewEditsSource) |
-| configuration | $configSource |
-| repo / HEAD before | $repoRoot / $($before.Head) |
-| duration | $($duration.ToString('hh\:mm\:ss')) |
-| tool calls | $($toolCalls.Count) ($($toolFailures.Count) failed) |
-| tokens | $usageLine |
-| turn end | $diagnostics |
-
-## Changed by this run
-
-$changeLines
-
-## Pre-existing changes (not this run)
-
-$preExistingLines
-
-## Implementer report
-
-$($finalText.Trim())
-
-## stderr tail
-
-``````
-$stderrBlock
-``````
-
-Artifacts: ``$([IO.Path]::GetFileName($promptFile))``, ``$([IO.Path]::GetFileName($streamFile))``, ``$([IO.Path]::GetFileName($errFile))``, ``$([IO.Path]::GetFileName($patchFile))``
-"@
-[IO.File]::WriteAllText($reportFile, $report, $utf8)
+$finalize = Invoke-ReportHelper -NodePath $reportRuntime.Node -HelperPath $reportRuntime.Helper `
+    -HelperArguments @('finalize', '--input', $factsFile)
+if ($finalize.ExitCode -ne 0) {
+    Write-Output "result-error: reporting failed: $($finalize.Output.Trim())"
+    if (Test-Path -LiteralPath $resultFile -PathType Leaf) {
+        $resultRelative = [IO.Path]::GetRelativePath($repoRoot, $resultFile) -replace '\\', '/'
+        Write-Output "result: $resultRelative"
+    }
+    Write-Output "artifacts: prompt $promptFile | patch $patchFile | events $streamFile | stderr $errFile | report $reportFile | final $finalFile"
+    exit 1
+}
+try {
+    $finalizePayload = $finalize.Output.Trim() | ConvertFrom-Json -ErrorAction Stop
+}
+catch {
+    Write-Output 'result-error: reporting helper returned unreadable output'
+    if (Test-Path -LiteralPath $resultFile -PathType Leaf) {
+        $resultRelative = [IO.Path]::GetRelativePath($repoRoot, $resultFile) -replace '\\', '/'
+        Write-Output "result: $resultRelative"
+    }
+    Write-Output "artifacts: prompt $promptFile | patch $patchFile | events $streamFile | stderr $errFile | report $reportFile | final $finalFile"
+    exit 1
+}
 
 # --------------------------------------------------------------------------- stdout for the caller
 
-Write-Output "config: model deepseek-official/deepseek-flash | reasoningEffort $reasoningEffort ($reasoningEffortSource) | codexReviewEdits $codexReviewEdits ($codexReviewEditsSource) | $configSource"
-Write-Output "dsh: $status | exit $exitCode | $($duration.ToString('hh\:mm\:ss')) | $($toolCalls.Count) tool calls | mode $Mode"
-if ($sessionId) { Write-Output "session: $sessionId" }
-if ($runChanged.Count) { Write-Output "changed by this run: $($runChanged.Count) path(s)" }
-if ($preExisting.Count) { Write-Output "pre-existing dirty: $($preExisting.Count) path(s)" }
-Write-Output "report: $([IO.Path]::GetRelativePath($repoRoot, $reportFile))"
-if ($status -ne 'COMPLETED' -and $diagnostics) { Write-Output "diagnostics: $diagnostics" }
-Write-Output ''
-Write-Output '--- implementer report ---'
-Write-Output $finalText.Trim()
-if (-not $finalText.Trim() -and $stderrTail.Count) {
-    Write-Output '(no final text; stderr tail below)'
-    Write-Output ($stderrTail -join "`n")
+Write-Output "repo-root: $repoRoot"
+foreach ($summaryLine in @($finalizePayload.summaryLines)) {
+    Write-Output ([string]$summaryLine)
 }
 
-exit $exitCode
+$rawFinalText = ''
+if (Test-Path -LiteralPath $finalFile -PathType Leaf) {
+    $rawFinalText = [IO.File]::ReadAllText($finalFile, $utf8)
+}
+
+Write-Output ''
+Write-Output '--- implementer final message (raw, untrusted; not acceptance) ---'
+if ($rawFinalText.Trim()) {
+    Write-Output $rawFinalText.Trim()
+}
+else {
+    Write-Output '(no final message captured; see the result and stderr artifacts)'
+}
+
+try { Remove-Item -LiteralPath $factsFile -Force -ErrorAction SilentlyContinue } catch { }
+
+exit ([int]$finalizePayload.bridgeExitCode)

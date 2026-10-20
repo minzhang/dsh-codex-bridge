@@ -21,6 +21,7 @@ import { captureProcess } from '../../dsh-codex-bridge/node/capture-process.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const bridgeScript = join(repoRoot, 'dsh-codex-bridge', 'dsh-impl.ps1');
+const reportHelper = join(repoRoot, 'dsh-codex-bridge', 'node', 'run-report.mjs');
 const shippedConfig = join(repoRoot, 'dsh-codex-bridge', 'bridge.config.json');
 const mcpServerSource = join(repoRoot, 'dsh-codex-bridge', 'mcp', 'dsh-mcp-server.mjs');
 
@@ -46,6 +47,16 @@ function writeFixtureRepo(name) {
   mkdirSync(repo, { recursive: true });
   writeFileSync(join(repo, 'design.md'), '# Fixture design\n\nImplement the fixture behavior.\n', 'utf8');
   return repo;
+}
+
+function copyBridgeScript(directory) {
+  const script = join(directory, 'dsh-impl.ps1');
+  mkdirSync(dirname(script), { recursive: true });
+  copyFileSync(bridgeScript, script);
+  const helper = join(directory, 'node', 'run-report.mjs');
+  mkdirSync(dirname(helper), { recursive: true });
+  copyFileSync(reportHelper, helper);
+  return script;
 }
 
 function writeConfig(repo, relativePath, body) {
@@ -134,7 +145,9 @@ function makeFakeDsh() {
       '  permissionMode: process.env.DSH_PERMISSION_MODE,',
       '  stdin,',
       '}, null, 2));',
-      "process.stdout.write(JSON.stringify({ type: 'final', text: 'FAKE DSH COMPLETE' }) + '\\n');",
+      "process.stdout.write(JSON.stringify({ type: 'session', sessionId: 'session-fake' }) + '\\n');",
+      "const report = { schemaVersion: 1, status: 'DONE', summary: 'FAKE DSH COMPLETE', changes: [], checks: [], decisions: [], followUps: [] };",
+      "process.stdout.write(JSON.stringify({ type: 'final', text: JSON.stringify(report) }) + '\\n');",
       'process.exit(0);',
       '',
     ].join('\n'),
@@ -192,9 +205,7 @@ test('shipped config is the implicit default and dry run writes a patch', async 
 
 test('absent implicit config uses built-in max and Not Allow defaults', async () => {
   const directory = caseDirectory('missing-implicit');
-  const script = join(directory, 'bridge', 'dsh-impl.ps1');
-  mkdirSync(dirname(script), { recursive: true });
-  copyFileSync(bridgeScript, script);
+  const script = copyBridgeScript(join(directory, 'bridge'));
   const repo = writeFixtureRepo('missing-implicit repo');
 
   const result = await runBridge(script, [
@@ -390,9 +401,7 @@ test('explicit missing config fails before writing run artifacts', async () => {
 
 test('an invalid implicit config beside the bridge script fails', async () => {
   const directory = caseDirectory('invalid-implicit');
-  const script = join(directory, 'bridge', 'dsh-impl.ps1');
-  mkdirSync(dirname(script), { recursive: true });
-  copyFileSync(bridgeScript, script);
+  const script = copyBridgeScript(join(directory, 'bridge'));
   writeFileSync(join(directory, 'bridge', 'bridge.config.json'), '{"reasoningEffort":"ultra"}\n', 'utf8');
   const repo = writeFixtureRepo('invalid-implicit repo');
 
@@ -609,11 +618,9 @@ test('a normal run forwards the patch, session, mode, and environment to DSH', a
 
 test('normal preflight forwards default, 50000, and zero object limits', async () => {
   const directory = caseDirectory('preflight');
-  const script = join(directory, 'bridge', 'dsh-impl.ps1');
+  const script = copyBridgeScript(join(directory, 'bridge'));
   const setupScript = join(directory, 'bridge', 'windows', 'setup.ps1');
-  mkdirSync(dirname(script), { recursive: true });
   mkdirSync(dirname(setupScript), { recursive: true });
-  copyFileSync(bridgeScript, script);
   writeFileSync(
     setupScript,
     [
@@ -677,11 +684,9 @@ test('normal preflight forwards default, 50000, and zero object limits', async (
 
 test('invalid bridge max object input fails before preflight, DSH, and artifacts', async () => {
   const directory = caseDirectory('invalid-max-objects');
-  const script = join(directory, 'bridge', 'dsh-impl.ps1');
+  const script = copyBridgeScript(join(directory, 'bridge'));
   const setupScript = join(directory, 'bridge', 'windows', 'setup.ps1');
-  mkdirSync(dirname(script), { recursive: true });
   mkdirSync(dirname(setupScript), { recursive: true });
-  copyFileSync(bridgeScript, script);
   writeFileSync(
     setupScript,
     [
@@ -796,19 +801,49 @@ test('MCP schema and runtime arguments map to the exact bridge parameters', asyn
   mkdirSync(serverDirectory, { recursive: true });
   const serverPath = join(serverDirectory, 'dsh-mcp-server.mjs');
   copyFileSync(mcpServerSource, serverPath);
+  const helperDirectory = join(directory, 'node');
+  mkdirSync(helperDirectory, { recursive: true });
+  copyFileSync(reportHelper, join(helperDirectory, 'run-report.mjs'));
   const bridgePath = join(directory, 'dsh-impl.ps1');
   writeFileSync(
     bridgePath,
     [
+      '$repo = ""',
+      'for ($i = 0; $i -lt $args.Count - 1; $i++) { if ($args[$i] -eq "-Repo") { $repo = $args[$i + 1] } }',
+      'if (-not $repo) { $repo = (Get-Location).Path }',
+      '$runId = "20261020-120000-abcdef12"',
+      '$runDir = Join-Path $repo ".dsh-runs"',
+      'New-Item -ItemType Directory -Force -Path $runDir | Out-Null',
+      '$result = [ordered]@{',
+      '  schemaVersion = 1',
+      '  runId = $runId',
+      '  sessionId = $null',
+      '  sessionProvenance = $null',
+      '  design = @{ path = "x.md" }',
+      '  timestamps = @{ startedAt = "2026-10-20T00:00:00.000Z"; completedAt = "2026-10-20T00:00:01.000Z" }',
+      '  execution = @{ status = "SUCCEEDED"; originalExitCode = 0; bridgeExitCode = 0; durationMs = 1000; settings = @{} }',
+      '  task = @{ status = "DONE"; claimedStatus = "DONE"; summary = "fake bridge ok"; changes = @(); checks = @(); decisions = @(); followUps = @() }',
+      '  report = @{ validity = "VALID"; errors = @(); warnings = @(); rawTextArtifact = $null; legacyStatus = $false }',
+      '  acceptance = @{ status = "PENDING"; coverage = "NOT_DECLARED"; expectedCheckIds = @(); missingCheckIds = @(); additionalCheckIds = @() }',
+      '  observations = @{ workingTree = @{ status = "UNAVAILABLE"; reason = "fixture"; headBefore = $null; headAfter = $null; paths = @(); warnings = @() }; toolCalls = 0; toolErrors = 0; tokens = $null; implementerClaimedChanges = @() }',
+      '  diagnostics = @{ malformedEventLines = @{ count = 0; lineNumbers = @() }; lastValidEvent = $null; turnEnd = $null; error = $null; captureErrors = @(); inventoryErrors = @(); stderrArtifact = "" }',
+      '  artifacts = @{ result = ".dsh-runs/$runId-result.json"; report = ".dsh-runs/$runId-report.md" }',
+      '}',
+      '[IO.File]::WriteAllText((Join-Path $runDir "$runId-result.json"), ($result | ConvertTo-Json -Depth 20))',
       '$payload = @{ args = @($args); cwd = (Get-Location).Path } | ConvertTo-Json -Compress',
       '$callFile = Join-Path $env:FAKE_BRIDGE_LOG_DIR ("call-" + [guid]::NewGuid().ToString("N") + ".json")',
       '[IO.File]::WriteAllText($callFile, $payload)',
+      'Write-Output "repo-root: $repo"',
+      'Write-Output "result: .dsh-runs/$runId-result.json"',
       'Write-Output "fake bridge ok"',
       'exit 0',
       '',
     ].join('\n'),
     'utf8',
   );
+
+  const mcpCwd = caseDirectory('mcp-cwd');
+  const mcpRepo = caseDirectory('mcp repo path');
 
   const logDirectory = join(directory, 'bridge-calls');
   mkdirSync(logDirectory, { recursive: true });
@@ -826,7 +861,7 @@ test('MCP schema and runtime arguments map to the exact bridge parameters', asyn
           spec: 'docs/design/x.md',
           task: 'do work',
           session: 'session-42',
-          repo: 'C:\\repo path',
+          repo: mcpRepo,
           mode: 'workspace-write',
           config: 'config dir/my config.json',
           reasoning_effort: 'max',
@@ -901,7 +936,7 @@ test('MCP schema and runtime arguments map to the exact bridge parameters', asyn
     serverPath,
     messages,
     { FAKE_BRIDGE_LOG_DIR: logDirectory },
-    repoRoot,
+    mcpCwd,
   );
   assert.equal(result.code, 0, result.stderr);
   const responses = result.stdout
@@ -925,6 +960,13 @@ test('MCP schema and runtime arguments map to the exact bridge parameters', asyn
 
   assert.equal(byId.get(3).result.isError, false);
   assert.match(byId.get(3).result.content[0].text, /fake bridge ok/);
+  assert.equal(byId.get(3).result.structuredContent.schemaVersion, 1);
+  assert.equal(byId.get(3).result.structuredContent.runId, '20261020-120000-abcdef12');
+  assert.equal(byId.get(3).result.structuredContent.acceptance.status, 'PENDING');
+  assert.match(
+    byId.get(3).result.content[0].text,
+    /execution: SUCCEEDED \| task: DONE \(implementer claim\) \| report: VALID \| acceptance: PENDING/,
+  );
   assert.equal(byId.get(8).result.isError, false);
   assert.equal(byId.get(9).result.isError, false);
   for (const id of [4, 5, 6, 7, 10, 11, 12, 13]) {
@@ -961,7 +1003,7 @@ test('MCP schema and runtime arguments map to the exact bridge parameters', asyn
   assert.equal(valueFor('-Spec'), 'docs/design/x.md');
   assert.equal(valueFor('-Task'), 'do work');
   assert.equal(valueFor('-Session'), 'session-42');
-  assert.equal(valueFor('-Repo'), 'C:\\repo path');
+  assert.equal(valueFor('-Repo'), mcpRepo);
   assert.equal(valueFor('-Mode'), 'workspace-write');
   assert.equal(valueFor('-Config'), 'config dir/my config.json');
   assert.equal(valueFor('-ReasoningEffort'), 'max');

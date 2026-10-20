@@ -229,3 +229,67 @@ Runtime and regression tests are unchanged from accepted commit 715eaed; its com
 Windows and demo results above remain the code baseline. This documentation update did not
 repeat permission repair or model calls. Route-check evidence remains ignored under
 .dsh-runs/skill-checks/.
+
+## Reliable one-way reports — 2026-10-20
+
+**Acceptance: ACCEPTED after DSH implementation, same-session rework and independent review.**
+
+[Design 006](design/006-reliable-one-way-reports.md) keeps one non-interactive delegation
+followed by one report. The delivery folder now writes a canonical schemaVersion 1 result
+JSON and derives the readable report and terminal summary from it. MCP returns the same
+validated object as structuredContent. Process outcome, implementer claims, report validity
+and independent acceptance are separate: a zero-exit missing/invalid report returns bridge
+exit 65, valid BLOCKED/PARTIAL outcomes remain normal results, and acceptance stays PENDING
+until independent review is recorded separately.
+
+Designs can declare check IDs, exact commands and working directories. Reports must account
+for every declared check, including unrun/blocked checks with reasons. The bridge annotates
+check claims and log availability without executing report-supplied commands or treating log
+existence as proof of success. Dirty-file fingerprints and index/status observations distinguish
+paths modified again during a run from pre-existing changes that remain unchanged; they make
+no claim of causal attribution to DSH. Missing/malformed output and capture/inventory problems
+remain visible with preserved local artifacts.
+
+Independent review reproduced three defects in the first implementation: command normalization
+could accept different arguments, an inventory could hash a file through a parent junction,
+and supplied capture errors could leave a zero-exit result VALID. Same-session DSH rework now
+trims only command boundaries, inspects link/reparse ancestors before content reads (including
+clean-path follow-ups), and invalidates captured-error results while preserving the original
+process exit. Four independent host probes pass after these corrections. The MCP junction
+fixture now asserts actual creation/refusal at a fresh path and avoids recursive removal there.
+No original assertion was removed, and ordinary/sandbox test-file lists remain identical.
+
+DSH used Flash/max, Not Allow, workspace-write confinement and normal Windows preflight for
+both rounds. Codex wrote the design, independent probes and acceptance record; production
+implementation and corrections stayed with DSH. No dependencies, demo features, Windows
+permission algorithms, authentication/profile settings, CI or packaging were added.
+
+| Acceptance check | Actual result |
+|---|---|
+| Complete bridge sandbox suite | `npm run test:sandbox`: 50 passed, zero failed/skipped |
+| Independent ordinary bridge suite | `npm test`: 50 passed, zero failed/skipped; 26 runtime/test/configuration hashes unchanged during the suite and still matching after DSH returned |
+| Complete Windows suites | `npm run test:windows` passed in DSH and independently on the host, including real 28000/28001 enumeration/manifest boundaries and ACL regressions |
+| Final syntax scans | Passed in both environments; 10 PowerShell and 11 Node files parsed |
+| Demo typecheck and build | `npm --prefix demos/pascal-desk run check` and `run build` passed in both environments |
+| Complete demo suites | `npm run test:demo:sandbox` and independent `npm run test:demo`: 148 passed each, zero failed/skipped |
+| TypeScript consumer | The documented strict NodeNext consumer command passed in both environments |
+| Independent report probes | Command slash/backslash exactness, parent-junction hash refusal and capture-error invalidation all passed |
+| Copied-kit Windows lifecycle | Both ordinary and temporary-WRITE_OWNER scenarios passed repair, real confinement, repeat repair, alias refusal and exact rollback in unique host-temp fixtures |
+| Both delivery routes | Direct-folder and installed-skill layout copies retained complete files, valid skill references and project-local dry-run behavior |
+| Actual new-bridge session resume | SUCCEEDED / DONE / VALID / PENDING, COMPLETE coverage of six declared checks, no malformed events or capture errors; four pre-existing paths changed and ten remained unchanged |
+
+The report-only rework did not change Windows implementation/tests, demo source/tests or the
+capture-process type interface. Their completed behavioral results were retained, while the
+complete bridge suites and syntax scans were rerun on the final source. An exploratory ordinary
+worker-suite attempt inside DSH hit the documented spawn EPERM restriction; it is not counted
+as acceptance. DSH's complete no-worker suite and Codex's ordinary host suite both passed
+without changing confinement or dropping assertions.
+
+Full logs, exit records, independent probes and source hashes stay ignored under
+`.dsh-runs/report-review/`, `.dsh-runs/report-checks/` and `.dsh-runs/report-rework-checks/`.
+The bootstrap and actual new-bridge runs are under `.dsh-runs/report-implementation/` and
+`.dsh-runs/report-rework/`. Delivery-route evidence stays under `.dsh-runs/skill-checks/`.
+Lifecycle recovery evidence stays in its original host-temp fixtures with ignored pointers
+under `development/.state/`. No raw transcripts, credentials, personal paths, dependencies,
+build products or recovery backups are included in publication. Linux/macOS, other DSH
+versions and other project types remain unverified.

@@ -55,7 +55,11 @@ pwsh -NoProfile -File dsh-codex-bridge/dsh-impl.ps1 -Spec docs/design/001-exampl
 
 The normal bridge invocation includes Windows preflight. Repair is explicit and saves recovery
 information. DSH stays confined to workspace-write. Run reports are local, ignored artifacts;
-a successful model response alone is never acceptance.
+each run writes a canonical `<run>-result.json` beside its prompt, patch, events, stderr and
+Markdown report. That result separates process outcome, the implementer's DONE/BLOCKED/PARTIAL
+claim, report validity and pending independent acceptance, and it records traceable check
+coverage plus observed working-tree changes. A successful model response or zero exit alone is
+never acceptance.
 
 The shipped `bridge.config.json` defaults to `reasoningEffort: "max"` and
 `codexReviewEdits: "Not Allow"`. The bridge applies the selected model/effort to that invocation

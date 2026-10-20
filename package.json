@@ -9,8 +9,8 @@
     "node": ">=22.14"
   },
   "scripts": {
-    "test": "node --test development/tests/capture-process.test.mjs development/tests/reviewer-node.test.mjs development/tests/run-tests.test.mjs development/tests/bridge-config.test.mjs",
-    "test:sandbox": "node dsh-codex-bridge/node/run-tests.mjs development/tests/capture-process.test.mjs development/tests/reviewer-node.test.mjs development/tests/run-tests.test.mjs development/tests/bridge-config.test.mjs",
+    "test": "node --test development/tests/capture-process.test.mjs development/tests/reviewer-node.test.mjs development/tests/run-tests.test.mjs development/tests/bridge-config.test.mjs development/tests/bridge-report.test.mjs",
+    "test:sandbox": "node dsh-codex-bridge/node/run-tests.mjs development/tests/capture-process.test.mjs development/tests/reviewer-node.test.mjs development/tests/run-tests.test.mjs development/tests/bridge-config.test.mjs development/tests/bridge-report.test.mjs",
     "test:windows": "pwsh -NoProfile -File development/tests/setup-syntax.test.ps1 && pwsh -NoProfile -File development/tests/setup-boundaries.test.ps1 && pwsh -NoProfile -File development/tests/setup-object-count.test.ps1 && pwsh -NoProfile -File development/tests/reviewer-acl.ps1",
     "test:demo": "npm --prefix demos/pascal-desk run test",
     "test:demo:sandbox": "npm --prefix demos/pascal-desk run test:sandbox",

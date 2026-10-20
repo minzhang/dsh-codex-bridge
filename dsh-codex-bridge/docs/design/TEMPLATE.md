@@ -41,6 +41,25 @@ Keep the complete test-file list and real CLI assertions. State the expected tes
 where full logs are saved, and any platform-specific checks. Setup verification is not a
 substitute for these project checks. Do not disable confinement to make a test pass.
 
+Declare the expected acceptance-check IDs and exact commands between the markers below. The
+bridge reads this JSON manifest, requires every ID in the implementer report, and treats a
+wrong command/cwd as missing coverage. Omit the markers when a project genuinely has no
+declared checks; coverage then reports `NOT_DECLARED`.
+
+```markdown
+<!-- dsh-acceptance-start -->
+[
+  {"id": "A1", "command": "npm run check", "cwd": "."},
+  {"id": "A2", "command": "npm run build", "cwd": "."},
+  {"id": "A3", "command": "npm run test:sandbox", "cwd": "."}
+]
+<!-- dsh-acceptance-end -->
+```
+
+Save complete logs under an ignored path such as `.dsh-runs/checks/` and report each one as a
+repository-relative `logPath`. The bridge annotates availability but does not read log
+contents or execute report-supplied commands.
+
 ## 4. Scope
 
 ### In scope
