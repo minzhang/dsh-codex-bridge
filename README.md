@@ -64,9 +64,9 @@ never acceptance.
 The shipped `bridge.config.json` defaults to `reasoningEffort: "max"` and
 `codexReviewEdits: "Not Allow"`. The bridge applies the selected model/effort to that invocation
 through a temporary `--patch` overlay instead of editing DSH profiles. `Not Allow` means Codex
-reviews and runs checks but delegates production fixes and test additions to the same DSH
-session; `Allow` permits only small, recorded review fixes and focused regression cases. See the
-[delivery guide](dsh-codex-bridge/README.md) for resolution order and overrides.
+reviews and runs checks but delegates production fixes and test additions to DSH, resuming the
+same session by default; `Allow` permits only small, recorded review fixes and focused regression
+cases. See the [delivery guide](dsh-codex-bridge/README.md) for resolution order and overrides.
 
 ### Option 2: install as a Codex skill from GitHub
 
@@ -109,7 +109,7 @@ historical development records are outside it. Future verification projects belo
 |---|---|
 | Windows, DSH desktop 0.2.1-rc.2, PowerShell 7, Node 22.14.0 | Verified locally: copied-folder setup, confinement, delegation, review/rework and recovery |
 | DeepSeek Flash, Max effort, workspace-write sandbox | Default bridge configuration; used for implementation and complete sandbox test runs |
-| Codex post-review edits `Not Allow` | Default configuration; fixes and test additions stay with the same DSH session |
+| Codex post-review edits `Not Allow` | Default configuration; fixes and test additions stay with DSH, resuming the same session by default |
 | TypeScript terminal application (Pascal Desk) | Verified: build, typecheck, 148 tests and interactive Windows use |
 | Linux and macOS | **Not yet verified**; Windows ACL repair does not apply there |
 | Web, backend and native UI applications | **Not yet verified** |

@@ -10,7 +10,9 @@ supporting directory. Keep future demos under `demos/`.
 Codex owns requirements, design, repository organization, documentation, independent review and
 publication. DeepSeek Harness (DSH) owns production implementation and fixes. Codex may perform
 mechanical moves/path corrections and write independent acceptance tests. Delegate approved
-work using a design under `development/design/`; use the same DSH session for rework. DSH leaves
+work using a design under `development/design/`; follow the
+[session selection rules](dsh-codex-bridge/SKILL.md#choose-a-dsh-session), defaulting to the same
+DSH session for rework and recording the reason for each choice. DSH leaves
 changes uncommitted and reports actual commands/results. Codex independently verifies acceptance.
 
 ## Current authorization

@@ -58,13 +58,24 @@ For Node subprocess/worker limitations on Windows, consult
 Windows with a TypeScript terminal application is the verified environment. Linux/macOS and other
 project types need separate validation; do not run Windows ACL repair there.
 
+## Choose a DSH session
+
+For related work in the same repository, default to resuming the existing DSH session,
+including implementation, testing and rework. Pass `-Session <id-from-report>` to resume;
+omit `-Session` to start a new session. A new process or run report does not mean a new session.
+
+Codex decides when a new session better fits the task. Before each delegation, record the
+choice and a brief reason in the existing design or delegation notes, for example:
+`Session: RESUME <id> — same task rework` or `Session: NEW — independent task`.
+
 ## Delegate, review, and rework
 
 1. Define a reviewable phase in the project's design directory using
    [docs/design/TEMPLATE.md](docs/design/TEMPLATE.md). Specify scope, interfaces, permitted files,
    constraints, and the project's actual build/test commands. Resolve material product decisions
    before delegation. Do not impose the Pascal demo's phase count or test commands on another project.
-2. Run the bridge from the target project root, replacing the example spec with that design:
+2. Run the bridge from the target project root, replacing the example spec with that design.
+   This example starts a new session; add `-Session` when resuming:
 
    ```powershell
    pwsh -NoProfile -File ./dsh-codex-bridge/dsh-impl.ps1 -Repo . -Mode workspace-write -Spec docs/design/001-example.md
@@ -81,14 +92,14 @@ project types need separate validation; do not run Windows ACL repair there.
    runs the ordinary suite on a compatible host. Before any post-review edit, read the effective
    `codexReviewEdits` from `bridge.config.json`, an explicit `-Config`, or the run report. The
    default `Not Allow` means Codex records findings and delegates production fixes and test
-   additions to the same DSH session. `Allow` permits only small, localized fixes tied to a
-   recorded finding and a few focused regression/acceptance cases; record those changes and
+   additions to DSH, following the session choice above. `Allow` permits only small, localized
+   fixes tied to a recorded finding and a few focused regression/acceptance cases; record those changes and
    independently run the relevant checks. Feature work, large refactors, dependency changes and
    broad test-suite work stay with DSH. Never weaken assertions or treat the same self-review as
    independent acceptance. This collaboration policy is not an OS/security sandbox and grants no
    publication or unrelated permissions; explicit user instructions take priority.
-4. Record actionable review findings in the design. For corrections, use the **session ID from
-   that run's report** and the **same target repository**:
+4. Record actionable review findings in the design. Normally resume for corrections, using the
+   **session ID from that run's report** and the **same target repository**:
 
    ```powershell
    pwsh -NoProfile -File ./dsh-codex-bridge/dsh-impl.ps1 -Repo . -Mode workspace-write -Spec docs/design/001-example.md -Session session-<id-from-report> -Task 'Apply the reviewer feedback recorded in the design and rerun the acceptance checks.'

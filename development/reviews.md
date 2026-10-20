@@ -341,3 +341,22 @@ under `.dsh-runs/usage-implementation/`, `.dsh-runs/usage-checks/`,
 `.dsh-runs/usage-rework/`, `.dsh-runs/usage-rework-checks/`,
 `.dsh-runs/usage-fixture/`, `.dsh-runs/usage-fixture-checks/` and
 `.dsh-runs/usage-review/`. They are not part of the delivered folder or Git publication.
+
+## Lightweight session selection guidance — 2026-10-20
+
+**Accepted.** The user approved a short reminder in the
+[skill](../dsh-codex-bridge/SKILL.md#choose-a-dsh-session): default to resuming related work,
+let Codex choose a new session when appropriate, and record the choice with a brief reason
+before each delegation. Passing `-Session` resumes; omitting it starts a new session.
+The existing design or delegation notes hold that reason. No separate handoff mechanism,
+session ledger, fixed switching thresholds or additional approval step was added.
+Current agent instructions and READMEs now refer to this default instead of requiring
+same-session rework unconditionally.
+
+Codex checked the skill with `quick_validate.py` using the existing ignored local Python
+dependencies: passed. All 30 local links and anchors in the five edited instruction/guide
+files resolve, and `git diff --check` passes. Editorial review covered first delegation,
+same-task rework and a task that warrants a new session; each can express its choice and
+reason using the existing interface. This is documentation validation, not a fresh live
+session test. Runtime code and tests are unchanged; no full bridge, Windows or demo suite
+was run, consistent with the user's affected-checks-only request.

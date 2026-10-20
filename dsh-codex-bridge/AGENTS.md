@@ -53,8 +53,9 @@ Work in this repository is split between two agents. Do not blur the roles.
    pwsh -File dsh-codex-bridge/dsh-impl.ps1 -Spec docs/design/001-example.md
    ```
 
-   For a follow-up round on the same work, pass the `session:` id from the previous run
-   with `-Session` and describe the correction with `-Task`.
+   For a follow-up round on the same work, default to passing the session ID from the previous
+   run's report with `-Session` and describe the correction with `-Task`. Follow
+   [session selection](SKILL.md#choose-a-dsh-session), recording the choice and a brief reason.
 3. The implementation agent works in the repository, runs the acceptance checks, and
    leaves the changes uncommitted. It returns one JSON implementer report with status
    `DONE`, `BLOCKED` or `PARTIAL`; the bridge writes the canonical result and report.
@@ -68,8 +69,8 @@ Before making any post-review edit, consult the effective `codexReviewEdits` val
 `Not Allow`.
 
 - **`Not Allow`** — Codex reviews, runs checks, records findings, and delegates production
-  fixes and test additions to the same DSH session. It does not edit production code or tests
-  itself.
+  fixes and test additions to DSH, using the session choice above. It does not edit production
+  code or tests itself.
 - **`Allow`** — Codex may make only small, localized fixes tied to a recorded review finding,
   plus a few focused regression/acceptance cases for that finding. Codex records what it
   changed and independently runs the relevant checks.

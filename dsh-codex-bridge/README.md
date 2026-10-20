@@ -149,10 +149,13 @@ into chat. The skill uses your configured credentials and does not create or rep
 ```powershell
 pwsh -NoProfile -File dsh-codex-bridge/dsh-impl.ps1 -Spec docs/design/001-example.md
 
-# After review, continue the same DSH session for corrections:
+# After review, normally continue the same DSH session for corrections:
 pwsh -NoProfile -File dsh-codex-bridge/dsh-impl.ps1 -Spec docs/design/001-example.md `
   -Session session-<id-from-report> -Task 'Apply the reviewer feedback recorded in the design.'
 ```
+
+Follow the [session selection rules](SKILL.md#choose-a-dsh-session): default to resuming related
+work, choose a new session when appropriate, and record a brief reason for either choice.
 
 The bridge passes the design to `dsh headless --patch <run-patch.yml> --json`, captures the
 event stream and final report, and returns the bridge exit code (preserving a nonzero DSH exit
@@ -496,7 +499,8 @@ problem, not a reason to disable confinement.
 
 `codexReviewEdits` controls what Codex may do after reviewing a DSH run. `Not Allow` is the
 default: Codex reviews and runs checks, records findings, and delegates production fixes and
-test additions to the same DSH session. `Allow` permits only small, localized fixes tied to a
+test additions to DSH, following [session selection](SKILL.md#choose-a-dsh-session).
+`Allow` permits only small, localized fixes tied to a
 recorded review finding, plus a few focused regression/acceptance cases for that finding; Codex
 records what it changed and independently runs the relevant checks. Feature implementation,
 large refactors, dependency changes and broad test-suite work stay with DSH. Codex never
