@@ -13,12 +13,20 @@ No build, packaging or npm install is needed for the bridge itself.
 
 Choose either route. Both use the same `dsh-codex-bridge/` files and require your own DSH setup.
 
+The bridge and optional Codex skill invoke the **DSH command-line interface**, using
+`dsh headless` through `dsh-impl.ps1`. On the verified **Windows** installation, configure
+your DeepSeek API key as `DEEPSEEK_API_KEY` in the user-level file
+`%USERPROFILE%\.dsh\.env` before the first delegation. See
+[DSH CLI and API key setup (Windows)](dsh-codex-bridge/README.md#dsh-cli-and-api-key-setup-windows)
+for the file format and steps. This Windows path and these setup instructions do not apply
+to Linux or macOS; those platforms still need separate setup and validation.
+
 ### Option 1: copy the folder
 
 1. Copy `dsh-codex-bridge/` into your project's root. Omit any locally generated `.state/`.
    A clean Git clone contains no machine-specific state or credentials.
 2. Install PowerShell 7, Node.js 22.14+ and DeepSeek Harness. Configure your own DSH
-   authentication using the [onboarding guide](dsh-codex-bridge/README.md). The bridge selects
+   authentication using the [Windows API key guide](dsh-codex-bridge/README.md#dsh-cli-and-api-key-setup-windows). The bridge selects
    DeepSeek Flash, Max effort, and the Codex review policy per run from `bridge.config.json`.
 3. Give Codex this instruction:
 

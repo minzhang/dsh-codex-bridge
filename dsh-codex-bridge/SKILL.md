@@ -33,8 +33,15 @@ the shared skill installation or treat the skills directory as the target projec
 
 ## Prepare DSH
 
-Check the README prerequisites and existing DSH authentication. Use its **Model, effort, and
-Codex review policy** section. The bridge selects DeepSeek Flash and the requested effort for
+This skill invokes the **DSH command-line interface**: the project-local `dsh-impl.ps1` runs
+`dsh headless`. Check the launcher and authentication using **DSH CLI and API key setup (Windows)**
+in [README.md](README.md). On the verified Windows installation, the default user environment
+file is `%USERPROFILE%\.dsh\.env`, containing `DEEPSEEK_API_KEY`; an existing `DSH_HOME` override
+changes that location. These Windows paths and setup steps do not apply to Linux or macOS.
+Have the user configure any missing key locally; do not request its value in chat.
+
+Use the README's **Model, effort, and Codex review policy** section. The bridge selects
+DeepSeek Flash and the requested effort for
 each invocation through a run-scoped `--patch` overlay; its shipped `bridge.config.json`
 defaults to `reasoningEffort: max` and `codexReviewEdits: Not Allow`. `-Config`,
 `-ReasoningEffort`, and `-CodexReviewEdits` override the file per setting. Do not edit global

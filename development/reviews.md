@@ -206,3 +206,26 @@ Full check logs and exit codes are ignored under .dsh-runs/count-28000-checks/fi
 .dsh-runs/count-28000-implementation/ and .dsh-runs/count-28000-rework/. No raw transcripts,
 credentials, temporary fixtures or machine-specific backups are included in publication.
 Linux/macOS, other DSH versions and other project types remain unverified.
+
+## Windows DSH CLI and API key onboarding — 2026-10-20
+
+**Acceptance: ACCEPTED for documentation only.**
+
+The root README, delivery README and skill entry now explicitly identify the DSH command-line
+interface and `dsh headless` invocation. The delivery guide explains the verified Windows
+user-level `%USERPROFILE%\.dsh\.env` file, the `DEEPSEEK_API_KEY` entry, preserving existing
+settings, saving the exact filename, and starting a new run after editing it. It also covers
+an existing DSH_HOME override and inherited API-key environment variables. Windows paths and
+commands are explicitly scoped to Windows; they are not Linux/macOS onboarding instructions.
+
+Codex verified the installed DSH 0.2.1-rc.2 launcher's CLI entry point, home-path resolution,
+layered environment loading and provider variable name by reading installed runtime code.
+No credential file was read, created or edited, and no live authentication request was made.
+Examples contain only a placeholder key and symbolic user paths.
+
+Skill validation passed, all 26 local links/section anchors in the three edited guides resolved,
+and both direct-folder and installed-skill layout dry runs passed. Diff whitespace checks passed.
+Runtime and regression tests are unchanged from accepted commit 715eaed; its complete bridge,
+Windows and demo results above remain the code baseline. This documentation update did not
+repeat permission repair or model calls. Route-check evidence remains ignored under
+.dsh-runs/skill-checks/.

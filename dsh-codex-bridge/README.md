@@ -52,7 +52,8 @@ Give the next Codex this instruction:
    Merge the collaboration rules in this folder's `AGENTS.md` into the project's instructions
    if needed; do not overwrite existing project rules blindly.
 2. Install **PowerShell 7**, **Node 22.14+** (for the bundled Node helpers), and DSH. Configure
-   DSH authentication using its normal setup. Never copy credentials into this package.
+   the DSH CLI's API key using [DSH CLI and API key setup (Windows)](#dsh-cli-and-api-key-setup-windows)
+   below before the first delegation. Never copy credentials into this package.
 3. Check `dsh --version` in a new terminal. The default Windows desktop launcher is
    `%LOCALAPPDATA%\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd`.
    A downloaded ZIP may mark its scripts as Internet files. If Windows PowerShell refuses a
@@ -101,6 +102,47 @@ Give the next Codex this instruction:
 The Windows setup was developed against **DSH 0.2.1-rc.2**. Installation/API changes, unusual
 permissions, links, or another sandbox policy can require further diagnosis. Preflight is an
 early check, not a promise that every repository or future DSH release will work unchanged.
+
+## DSH CLI and API key setup (Windows)
+
+This bridge and its optional Codex skill call the **command-line version of DeepSeek Harness**.
+The project-local `dsh-impl.ps1` launches `dsh headless --patch <run-patch.yml> --json` and sends
+the design on standard input. The verified Windows desktop installation supplies the `dsh.cmd`
+launcher shown above. Open a new terminal after installation and check `dsh --version`; if the
+launcher is not on PATH, pass its full path to the bridge's `-Dsh` parameter.
+
+**The following API key file path and commands are Windows-specific. Do not use them as
+Linux or macOS configuration instructions.** Those platforms have not been verified by this
+project; follow the DSH setup instructions for your platform and installation.
+
+Before the first delegation, configure `DEEPSEEK_API_KEY` in the DSH user environment file:
+
+```text
+%USERPROFILE%\.dsh\.env
+```
+
+`%USERPROFILE%` is the Windows user-profile directory. The `.dsh` directory under it is the
+default DSH home, and its `.env` applies across projects. If you already override `DSH_HOME`,
+edit `.env` in that directory instead. The commands below assume the default Windows location:
+
+```powershell
+$dshUserHome = Join-Path $env:USERPROFILE '.dsh'
+New-Item -ItemType Directory -Force -Path $dshUserHome | Out-Null
+notepad.exe (Join-Path $dshUserHome '.env')
+```
+
+Add or update this entry with your own DeepSeek API key, preserving any other settings:
+
+```dotenv
+DEEPSEEK_API_KEY=your_deepseek_api_key
+```
+
+Save the filename as exactly `.env`, not `.env.txt`, then start a new bridge/DSH run so the
+CLI loads it. An already supplied `DEEPSEEK_API_KEY` in the launching environment is also
+supported. `dsh --version` only checks that the launcher runs; the first successful model
+request confirms authentication. Keep the real key in your local user configuration, outside
+this repository and the copied skill. Do not commit it, include it in run reports, or paste it
+into chat. The skill uses your configured credentials and does not create or replace them.
 
 ## Delegate and review
 
@@ -176,9 +218,10 @@ or invalid file fails before preflight or model launch. Supported effort values 
 `low`, `high`, `max`; the review policy is `Not Allow` or `Allow`. Values are case-insensitive;
 effective values are canonicalized to lower-case effort and `Not Allow`/`Allow`.
 
-The tested catalog labels this model alias DeepSeek-V4.1-Flash. Use DSH's normal authentication
-setup or an existing `DEEPSEEK_API_KEY` environment variable. A missing key/profile is an
-authentication/setup problem, not a reason to disable confinement.
+The tested catalog labels this model alias DeepSeek-V4.1-Flash. Configure authentication using
+[DSH CLI and API key setup (Windows)](#dsh-cli-and-api-key-setup-windows) or an existing
+`DEEPSEEK_API_KEY` in the launching environment. A missing key/profile is an authentication/setup
+problem, not a reason to disable confinement.
 
 `codexReviewEdits` controls what Codex may do after reviewing a DSH run. `Not Allow` is the
 default: Codex reviews and runs checks, records findings, and delegates production fixes and
