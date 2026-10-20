@@ -95,6 +95,8 @@ new repository or restore it against another tree.
   [28,000-object default and overrides](design/005-object-count-default.md).
 - [Reliable one-way reports](design/006-reliable-one-way-reports.md): canonical results,
   declared check coverage, working-tree observations and report validation.
+- [Runtime token usage](design/007-run-token-usage.md): per-run execution metadata,
+  cache accounting and affected-component verification.
 - Earlier bridge designs in `design/001-*` and `design/002-*` record the original implementation.
 - `history/` contains sanitized historical reports. Paths/test counts there describe the layout
   and product stage at the time; follow current READMEs for commands.

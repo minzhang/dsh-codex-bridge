@@ -547,6 +547,111 @@ test('a valid DONE report produces one canonical result, Markdown, and terminal 
   assert.deepEqual(JSON.parse(rawFinal), report);
 });
 
+test('runtime token usage is canonical in the result, Markdown, stdout, and MCP', async () => {
+  const pkg = copyBridgePackage('usage-propagation');
+  const repo = caseDirectory('usage-propagation repo');
+  writeDesign(repo);
+  const usageEvents = [
+    {
+      type: 'status',
+      phase: 'step_end',
+      usage: {
+        inputTokens: 4888,
+        cacheReadTokens: 373888,
+        cacheWriteTokens: 0,
+        outputTokens: 7507,
+        reasoningTokens: 100,
+        totalTokens: 386283,
+      },
+    },
+    {
+      type: 'status',
+      phase: 'step_end',
+      usage: {
+        inputTokens: 100,
+        cacheReadTokens: 50,
+        cacheWriteTokens: 25,
+        outputTokens: 40,
+        reasoningTokens: 10,
+        totalTokens: 215,
+      },
+    },
+    { type: 'status', phase: 'turn_end', reason: { kind: 'completed' } },
+  ];
+  const run = await runBridge(
+    pkg,
+    repo,
+    makeScenario(makeReport(), { events: usageEvents, sessionId: 'session-usage' }),
+  );
+  assert.equal(run.code, 0, run.stderr);
+  const { result } = readResultFromOutput(repo, run.stdout);
+  assert.deepEqual(result.execution.usage, {
+    scope: 'RUN',
+    source: 'DSH_STEP_END',
+    status: 'COMPLETE',
+    stepsObserved: 2,
+    stepsWithUsage: 2,
+    inputTokens: 378951,
+    inputUncachedTokens: 4988,
+    inputCacheHitTokens: 373938,
+    inputCacheMissTokens: 5013,
+    inputCacheWriteTokens: 25,
+    outputTokens: 7547,
+    reasoningTokens: 110,
+    totalTokens: 386498,
+    cacheHitRate: 373938 / 378951,
+    warnings: [],
+  });
+  assert.deepEqual(result.observations.tokens, { input: 4988, output: 7547 });
+
+  const markdown = readFileSync(resolve(repo, result.artifacts.report), 'utf8');
+  assert.match(markdown, /### Token usage/);
+  assert.match(markdown, /Scope: \*\*RUN\*\* - this bridge invocation only/);
+  assert.match(markdown, /\| input total \| 378,951 \|/);
+  assert.match(markdown, /\| input uncached \| 4,988 \|/);
+  assert.match(markdown, /\| cache hit \| 373,938 \|/);
+  assert.match(markdown, /\| cache miss \(includes cache write\) \| 5,013 \|/);
+  assert.match(markdown, /\| cache write \(included in cache miss\) \| 25 \|/);
+  assert.match(markdown, /\| output \| 7,547 \|/);
+  assert.match(markdown, /\| reasoning \(included in output; not added separately\) \| 110 \|/);
+  assert.match(markdown, /\| total \(input \+ output\) \| 386,498 \|/);
+  assert.match(markdown, /\| cache hit rate \(cache hit \/ input\) \| 98\.68% \|/);
+  assert.match(
+    run.stdout,
+    /token usage \(RUN, DSH_STEP_END, COMPLETE\): steps 2\/2 \| input total 378,951/,
+  );
+
+  // MCP must expose the same canonical object and use the same values in its text.
+  wrapBridgeWithExplicitDsh(pkg);
+  const mcpRepo = caseDirectory('usage-propagation mcp repo');
+  writeDesign(mcpRepo);
+  const scenarioPath = writeScenario(
+    pkg,
+    makeScenario(makeReport(), {
+      repo: mcpRepo,
+      events: usageEvents,
+      sessionId: 'session-usage-mcp',
+    }),
+  );
+  const response = await callMcpTool(
+    pkg,
+    mcpRepo,
+    mcpRepo,
+    { spec: 'design.md', repo: mcpRepo, skip_windows_preflight: true },
+    { FAKE_DSH_SCENARIO: scenarioPath },
+  );
+  assert.equal(response.isError, false, response.content[0].text);
+  assert.deepEqual(response.structuredContent.execution.usage, result.execution.usage);
+  assert.match(
+    response.content[0].text,
+    /token usage \(RUN, DSH_STEP_END, COMPLETE\): steps 2\/2 \| input total 378,951/,
+  );
+  assert.match(
+    response.content[0].text,
+    /\[canonical result\][\s\S]*token usage \(RUN, DSH_STEP_END, COMPLETE\): steps 2\/2 \| input total 378,951/,
+  );
+});
+
 test('valid BLOCKED and PARTIAL reports exit zero and remain normal results', async () => {
   const pkg = copyBridgePackage('blocked-partial');
   const manifest = [{ id: 'A1', command: 'npm run test:sandbox', cwd: '.' }];
@@ -1276,6 +1381,15 @@ test('MCP keeps early failures plain and rejects missing, traversing, linked, or
       '  # The test creates the junction itself at the fresh .dsh-runs path.',
       '  Write-Output "repo-root: $repo"; Write-Output "result: $resultRelative"; exit 0',
       '}',
+      'if ($scenario.mode -eq "stdout-usage") {',
+      '  New-Item -ItemType Directory -Force -Path (Join-Path $repo ".dsh-runs") | Out-Null',
+      '  Copy-Item -LiteralPath $scenario.resultSource -Destination (Join-Path $repo $resultRelative)',
+      '  Write-Output "repo-root: $repo"',
+      '  Write-Output "token usage (RUN, DSH_STEP_END, COMPLETE): raw model text"',
+      '  Write-Output "result: $resultRelative"',
+      '  Write-Output "bridge ok"',
+      '  exit 0',
+      '}',
       'New-Item -ItemType Directory -Force -Path (Join-Path $repo ".dsh-runs") | Out-Null',
       'Copy-Item -LiteralPath $scenario.resultSource -Destination (Join-Path $repo $resultRelative)',
       'Write-Output "repo-root: $repo"; Write-Output "result: $resultRelative"',
@@ -1323,6 +1437,28 @@ test('MCP keeps early failures plain and rejects missing, traversing, linked, or
   assert.equal(missing.isError, true);
   assert.equal(missing.structuredContent, undefined);
   assert.match(missing.content[0].text, /readable, safe result artifact/);
+
+  const legacy = await scenarioCall('legacy', 'copy');
+  assert.equal(legacy.isError, false, legacy.content[0].text);
+  assert.equal(legacy.structuredContent.execution.usage, undefined);
+  assert.match(legacy.content[0].text, /legacy result without execution\.usage/);
+  assert.match(legacy.content[0].text, /no cache-inclusive total is available/);
+
+  const legacyWithStdoutUsage = await scenarioCall('legacy-stdout-usage', 'stdout-usage');
+  assert.equal(
+    legacyWithStdoutUsage.isError,
+    false,
+    legacyWithStdoutUsage.content[0].text,
+  );
+  assert.equal(legacyWithStdoutUsage.structuredContent.execution.usage, undefined);
+  assert.match(
+    legacyWithStdoutUsage.content[0].text,
+    /\[canonical result\][\s\S]*legacy result without execution\.usage/,
+  );
+  assert.match(
+    legacyWithStdoutUsage.content[0].text,
+    /no cache-inclusive total is available/,
+  );
 
   const traversal = await scenarioCall('traversal', 'traversal');
   assert.equal(traversal.isError, true);

@@ -293,3 +293,51 @@ Lifecycle recovery evidence stays in its original host-temp fixtures with ignore
 under `development/.state/`. No raw transcripts, credentials, personal paths, dependencies,
 build products or recovery backups are included in publication. Linux/macOS, other DSH
 versions and other project types remain unverified.
+
+## Runtime token usage — 2026-10-20
+
+**Accepted.** [Design 007](design/007-run-token-usage.md) places machine-observed token usage
+in the canonical result's `execution.usage`, outside the implementer's business `task`.
+Markdown execution information, terminal output and MCP present the same data. The bridge
+collects only this invocation's `step_end` usage; it never asks the model to estimate counts
+or reads private session history. Reusing a session creates another RUN-scoped result,
+not an alleged lifetime session total.
+
+Input total now includes uncached input, cache reads and cache writes. Cache miss includes
+uncached input plus writes; reasoning, when reported, is a subset of output. Totals sum
+across model calls, including repeated/cached context. Missing/invalid counts remain unknown,
+and partial capture or failure produces explicit completeness information without changing
+task/report acceptance or existing exit rules. Schema version 1 remains compatible with
+older results; deprecated `observations.tokens` retains its raw-input/output meaning.
+
+Independent review reproduced invalid-total derivation, contradictory partial/overflow
+totals, inadequate subset validation and a malformed-object diagnostic crash. DSH fixed
+these in the original session, added maintained regressions, and made MCP always summarize
+the validated artifact even when captured stdout resembles a token summary. Real finalization
+tests cover failure, timeout, capture errors, malformed events, missing completion and
+telemetry-only warnings. A final fixture-only correction bounds recursive cleanup to the
+resolved unique host-temp directory.
+
+| Check | Actual result |
+|---|---|
+| DSH affected no-worker suites | `node dsh-codex-bridge/node/run-tests.mjs development/tests/bridge-usage.test.mjs development/tests/bridge-report.test.mjs`: 39 passed, zero failed/skipped |
+| DSH final fixture-only follow-up | The same runner with only `development/tests/bridge-usage.test.mjs`: 18 passed, zero failed/skipped; unchanged report-component results retained |
+| Codex independent ordinary suites | `node --test development/tests/bridge-usage.test.mjs development/tests/bridge-report.test.mjs`: 39 passed, zero failed/skipped |
+| Tested-source stability | Eight runtime/configuration/test SHA-256 hashes unchanged throughout independent testing |
+| Independent boundary probes | Six reproduced edge cases pass after correction |
+| Generated-metadata consistency | 2,160 paired field combinations pass the public result-usage validator |
+| Real run reconciliation | Each of three invocations (87, 55 and 6 steps) matches its own captured usage fields, totals and rate; same-session resumes do not accumulate earlier runs |
+| Syntax and whitespace | Helper syntax check and `git diff --check` pass |
+| Repository constraints | Existing report assertions retained; ordinary/sandbox file lists identical; no dependency changes or personal workspace paths in additions |
+
+The user's explicit request limited this change to affected tests. Full bridge, Windows ACL,
+demo/build and lifecycle suites were not run or claimed as fresh evidence. This review
+covers the current Windows backend and configured DSH version; it adds no platform claims.
+DSH retained Flash/max, workspace-write and normal preflight, and left changes uncommitted
+for Codex review and publication.
+
+Detailed logs, raw events, result/report artifacts, probes and tested hashes remain ignored
+under `.dsh-runs/usage-implementation/`, `.dsh-runs/usage-checks/`,
+`.dsh-runs/usage-rework/`, `.dsh-runs/usage-rework-checks/`,
+`.dsh-runs/usage-fixture/`, `.dsh-runs/usage-fixture-checks/` and
+`.dsh-runs/usage-review/`. They are not part of the delivered folder or Git publication.

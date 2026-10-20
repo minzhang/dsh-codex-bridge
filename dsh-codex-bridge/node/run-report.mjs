@@ -52,6 +52,28 @@ const CHECK_STATUSES = ['PASS', 'FAIL', 'NOT_RUN', 'BLOCKED'];
 const LOG_AVAILABILITY = ['PRESENT', 'MISSING', 'NOT_PROVIDED', 'UNSAFE'];
 const REPORT_VALIDITY = ['VALID', 'INVALID', 'MISSING'];
 const COVERAGE = ['COMPLETE', 'INCOMPLETE', 'NOT_DECLARED'];
+const USAGE_SCOPE = 'RUN';
+const USAGE_SOURCE = 'DSH_STEP_END';
+const USAGE_STATUSES = ['COMPLETE', 'PARTIAL', 'UNAVAILABLE'];
+const USAGE_METRIC_FIELDS = [
+  'inputTokens',
+  'inputUncachedTokens',
+  'inputCacheHitTokens',
+  'inputCacheMissTokens',
+  'inputCacheWriteTokens',
+  'outputTokens',
+  'reasoningTokens',
+  'totalTokens',
+];
+const USAGE_CORE_FIELDS = [
+  'inputTokens',
+  'inputUncachedTokens',
+  'inputCacheHitTokens',
+  'inputCacheMissTokens',
+  'inputCacheWriteTokens',
+  'outputTokens',
+  'totalTokens',
+];
 const CLASSIFICATIONS = [
   'NEWLY_CHANGED',
   'PREEXISTING_CHANGED',
@@ -79,6 +101,56 @@ function asStringArray(value) {
 
 function roundDuration(milliseconds) {
   return Number.isFinite(milliseconds) && milliseconds >= 0 ? Math.round(milliseconds) : 0;
+}
+
+function isSafeTokenCount(value) {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function addTokenCounts(...values) {
+  let total = 0;
+  for (const value of values) {
+    if (value === null || value === undefined) return { value: null, overflow: false };
+    total += value;
+    if (!Number.isSafeInteger(total)) return { value: null, overflow: true };
+  }
+  return { value: total, overflow: false };
+}
+
+const MAX_SAFE_TOKEN_BIG = BigInt(Number.MAX_SAFE_INTEGER);
+
+function knownTokenLowerBound(...values) {
+  let total = 0n;
+  for (const value of values) {
+    if (value !== null && value !== undefined) total += BigInt(value);
+  }
+  return total;
+}
+
+function describeTokenValue(value) {
+  if (value === null) return 'null';
+  const type = typeof value;
+  if (type === 'string') return `string ${JSON.stringify(truncate(value, 40))}`;
+  if (type === 'number' || type === 'boolean' || type === 'bigint') {
+    return String(value);
+  }
+  if (type === 'undefined') return 'undefined';
+  if (type === 'symbol') return 'symbol';
+  if (Array.isArray(value)) return 'array';
+  return type;
+}
+
+function emptyUsageMetrics() {
+  return {
+    inputTokens: null,
+    inputUncachedTokens: null,
+    inputCacheHitTokens: null,
+    inputCacheMissTokens: null,
+    inputCacheWriteTokens: null,
+    outputTokens: null,
+    reasoningTokens: null,
+    totalTokens: null,
+  };
 }
 
 function toIso(value) {
@@ -770,6 +842,534 @@ export function compareInventories(before, after) {
   };
 }
 
+// --------------------------------------------------------------------------- token usage
+
+// Canonical token accounting for this invocation only. It reads step_end usage from the
+// captured event stream, normalizes DSH's uncached/cache buckets, and keeps unknown values
+// unknown instead of guessing or treating absence as zero.
+export function normalizeStepUsage(rawUsage, stepNumber = 1) {
+  const warnings = [];
+  const prefix = `step ${stepNumber}`;
+  const metrics = emptyUsageMetrics();
+  if (!isPlainObject(rawUsage)) {
+    return { usable: false, metrics, warnings };
+  }
+  const present = {};
+  const values = {};
+  for (const field of [
+    'inputTokens',
+    'cacheReadTokens',
+    'cacheWriteTokens',
+    'outputTokens',
+    'totalTokens',
+    'reasoningTokens',
+  ]) {
+    present[field] = Object.hasOwn(rawUsage, field);
+    if (!present[field]) {
+      values[field] = null;
+      continue;
+    }
+    const value = rawUsage[field];
+    if (isSafeTokenCount(value)) {
+      values[field] = value;
+    } else {
+      values[field] = null;
+      warnings.push(
+        `${prefix} usage.${field} must be a nonnegative safe integer; ` +
+          `${describeTokenValue(value)} was ignored`,
+      );
+    }
+  }
+
+  const uncached = values.inputTokens;
+  const hit = values.cacheReadTokens;
+  const write = values.cacheWriteTokens;
+  const output = values.outputTokens;
+  const reportedTotal = values.totalTokens;
+  let reasoning = values.reasoningTokens;
+
+  if (reasoning !== null && output !== null && reasoning > output) {
+    warnings.push(
+      `${prefix} reasoningTokens ${reasoning} exceeds outputTokens ${output}; ` +
+        'reasoning is a subset of output and was ignored',
+    );
+    reasoning = null;
+  }
+
+  const cacheAbsent = !present.cacheReadTokens && !present.cacheWriteTokens;
+  const invalidInputComponent =
+    (present.inputTokens && uncached === null) ||
+    (present.cacheReadTokens && hit === null) ||
+    (present.cacheWriteTokens && write === null);
+
+  let inputTotal = null;
+  if (uncached !== null && hit !== null && write !== null) {
+    const sum = addTokenCounts(uncached, hit, write);
+    if (sum.overflow) {
+      warnings.push(
+        `${prefix} input token buckets exceed the safe integer range; ` +
+          'input total, total and cache hit rate are unknown',
+      );
+    } else {
+      inputTotal = sum.value;
+    }
+  }
+
+  if (uncached !== null && write !== null) {
+    const miss = addTokenCounts(uncached, write);
+    if (miss.overflow) {
+      warnings.push(
+        `${prefix} uncached input plus cache write exceeds the safe integer range; ` +
+          'cache miss is unknown',
+      );
+    } else {
+      metrics.inputCacheMissTokens = miss.value;
+    }
+  }
+
+  const totalPresent = present.totalTokens;
+  let total = reportedTotal;
+  // Unknown components are nonnegative, so the known input buckets plus output form
+  // a lower bound for any valid reported total. BigInt keeps the comparison exact even
+  // when the bound is above Number.MAX_SAFE_INTEGER.
+  const knownLowerBound = knownTokenLowerBound(uncached, hit, write, output);
+  if (reportedTotal !== null && BigInt(reportedTotal) < knownLowerBound) {
+    warnings.push(
+      `${prefix} reported totalTokens ${reportedTotal} is below the known input/output ` +
+        `components (${knownLowerBound.toString()}); input total, total and cache hit ` +
+        'rate are unknown',
+    );
+    inputTotal = null;
+    total = null;
+  } else if (reportedTotal !== null) {
+    if (inputTotal !== null && output !== null) {
+      const derivedTotal = addTokenCounts(inputTotal, output);
+      if (derivedTotal.overflow) {
+        warnings.push(
+          `${prefix} input total plus output exceeds the safe integer range; input total, ` +
+            'total and cache hit rate are unknown',
+        );
+        inputTotal = null;
+        total = null;
+      } else if (reportedTotal !== derivedTotal.value) {
+        warnings.push(
+          `${prefix} reported totalTokens ${reportedTotal} contradicts the complete ` +
+            `input/output components (${derivedTotal.value}); input total, total and ` +
+            'cache hit rate are unknown',
+        );
+        inputTotal = null;
+        total = null;
+      } else {
+        total = reportedTotal;
+      }
+    } else if (
+      inputTotal === null &&
+      output !== null &&
+      cacheAbsent &&
+      !invalidInputComponent
+    ) {
+      // DSH may omit optional cache buckets. A valid reported total and output can
+      // establish the cache-inclusive input total without inventing the cache split.
+      const derivedInput = BigInt(reportedTotal) - BigInt(output);
+      if (derivedInput < 0n || derivedInput > MAX_SAFE_TOKEN_BIG) {
+        warnings.push(
+          `${prefix} reported totalTokens ${reportedTotal} and outputTokens ${output} ` +
+            'do not yield a safe nonnegative input total; input total, total and cache ' +
+            'hit rate are unknown',
+        );
+        total = null;
+      } else if (uncached !== null && derivedInput < BigInt(uncached)) {
+        warnings.push(
+          `${prefix} reported totalTokens ${reportedTotal} implies fewer input tokens than ` +
+            `the reported uncached input; input total, total and cache hit rate are unknown`,
+        );
+        total = null;
+      } else {
+        inputTotal = Number(derivedInput);
+        total = reportedTotal;
+      }
+    } else {
+      total = reportedTotal;
+    }
+  } else if (!totalPresent && inputTotal !== null && output !== null) {
+    // Only an absent total may be derived from complete components. An invalid
+    // present total remains unknown instead of being replaced by arithmetic.
+    const derivedTotal = addTokenCounts(inputTotal, output);
+    if (derivedTotal.overflow) {
+      warnings.push(
+        `${prefix} input total plus output exceeds the safe integer range; total is unknown`,
+      );
+      total = null;
+    } else {
+      total = derivedTotal.value;
+    }
+  } else {
+    total = null;
+  }
+
+  metrics.inputTokens = inputTotal;
+  metrics.inputUncachedTokens = uncached;
+  metrics.inputCacheHitTokens = hit;
+  metrics.inputCacheWriteTokens = write;
+  metrics.outputTokens = output;
+  metrics.reasoningTokens = reasoning;
+  metrics.totalTokens = total;
+  const usable = Object.values(metrics).some((value) => value !== null);
+  return { usable, metrics, warnings };
+}
+
+export function computeRunUsage(events, options = {}) {
+  const invocationComplete = options.invocationComplete !== false;
+  const completenessWarnings = asStringArray(options.completenessWarnings);
+  const stepResults = [];
+  const warnings = [];
+  for (const event of events ?? []) {
+    if (!isPlainObject(event) || event.type !== 'status' || event.phase !== 'step_end') {
+      continue;
+    }
+    const result = normalizeStepUsage(event.usage, stepResults.length + 1);
+    stepResults.push(result);
+    warnings.push(...result.warnings);
+  }
+
+  const stepsObserved = stepResults.length;
+  const stepsWithUsage = stepResults.filter((step) => step.usable).length;
+  warnings.push(...completenessWarnings);
+  if (stepsObserved === 0) {
+    warnings.push('no step_end events were captured; token usage is unavailable');
+  } else if (stepsWithUsage === 0) {
+    warnings.push('no step_end event reported usable token usage; usage is unavailable');
+  } else if (stepsWithUsage < stepsObserved) {
+    warnings.push(
+      `${stepsObserved - stepsWithUsage} of ${stepsObserved} step_end events reported no ` +
+        'usable token usage; aggregate token usage is incomplete',
+    );
+  }
+
+  const aggregates = emptyUsageMetrics();
+  for (const field of USAGE_METRIC_FIELDS) {
+    let sum = 0;
+    let missing = false;
+    let overflow = false;
+    for (const step of stepResults) {
+      const value = step.metrics[field];
+      if (value === null) {
+        missing = true;
+        break;
+      }
+      sum += value;
+      if (!Number.isSafeInteger(sum)) {
+        overflow = true;
+        break;
+      }
+    }
+    if (overflow) {
+      warnings.push(
+        `run ${field} sum exceeds the safe integer range; the aggregate is unknown`,
+      );
+      aggregates[field] = null;
+    } else if (!missing && stepsObserved > 0) {
+      aggregates[field] = sum;
+    }
+  }
+
+  const missingCore = USAGE_CORE_FIELDS.filter((field) => aggregates[field] === null);
+  if (stepsWithUsage > 0 && missingCore.length > 0) {
+    warnings.push(
+      `token usage is incomplete; not reported for every observed step: ` +
+        missingCore.join(', '),
+    );
+  }
+
+  let cacheHitRate = null;
+  if (aggregates.inputTokens !== null && aggregates.inputCacheHitTokens !== null) {
+    if (aggregates.inputTokens > 0) {
+      cacheHitRate = aggregates.inputCacheHitTokens / aggregates.inputTokens;
+      if (!(cacheHitRate >= 0 && cacheHitRate <= 1)) {
+        warnings.push(
+          'aggregate cache hit rate is outside 0..1; cache hit rate is not available',
+        );
+        cacheHitRate = null;
+      }
+    }
+  }
+
+  const uniqueWarnings = [...new Set(warnings)];
+  let status = 'PARTIAL';
+  if (stepsWithUsage === 0) {
+    status = 'UNAVAILABLE';
+  } else if (
+    invocationComplete &&
+    uniqueWarnings.length === 0 &&
+    missingCore.length === 0 &&
+    stepsWithUsage === stepsObserved &&
+    (aggregates.inputTokens !== 0 || cacheHitRate === null)
+  ) {
+    status = 'COMPLETE';
+  }
+
+  return {
+    scope: USAGE_SCOPE,
+    source: USAGE_SOURCE,
+    status,
+    stepsObserved,
+    stepsWithUsage,
+    ...aggregates,
+    cacheHitRate,
+    warnings: uniqueWarnings,
+  };
+}
+
+export function validateUsageRecord(value) {
+  if (!isPlainObject(value)) return 'result execution.usage must be an object';
+  if (value.scope !== USAGE_SCOPE) {
+    return `result execution.usage.scope must be "${USAGE_SCOPE}"`;
+  }
+  if (value.source !== USAGE_SOURCE) {
+    return `result execution.usage.source must be "${USAGE_SOURCE}"`;
+  }
+  if (!USAGE_STATUSES.includes(value.status)) {
+    return `result execution.usage.status must be one of: ${USAGE_STATUSES.join(', ')}`;
+  }
+  if (!isSafeTokenCount(value.stepsObserved)) {
+    return 'result execution.usage.stepsObserved must be a nonnegative safe integer';
+  }
+  if (!isSafeTokenCount(value.stepsWithUsage)) {
+    return 'result execution.usage.stepsWithUsage must be a nonnegative safe integer';
+  }
+  if (value.stepsWithUsage > value.stepsObserved) {
+    return 'result execution.usage.stepsWithUsage must not exceed stepsObserved';
+  }
+  for (const field of USAGE_METRIC_FIELDS) {
+    if (!(value[field] === null || isSafeTokenCount(value[field]))) {
+      return `result execution.usage.${field} must be a nonnegative safe integer or null`;
+    }
+  }
+  if (
+    !(
+      value.cacheHitRate === null ||
+      (typeof value.cacheHitRate === 'number' &&
+        Number.isFinite(value.cacheHitRate) &&
+        value.cacheHitRate >= 0 &&
+        value.cacheHitRate <= 1)
+    )
+  ) {
+    return 'result execution.usage.cacheHitRate must be a number from 0 to 1 or null';
+  }
+  if (
+    !Array.isArray(value.warnings) ||
+    value.warnings.some((warning) => typeof warning !== 'string')
+  ) {
+    return 'result execution.usage.warnings must be an array of strings';
+  }
+
+  if (value.status === 'UNAVAILABLE') {
+    if (value.stepsWithUsage !== 0) {
+      return 'result execution.usage status UNAVAILABLE requires stepsWithUsage 0';
+    }
+    if (
+      USAGE_METRIC_FIELDS.some((field) => value[field] !== null) ||
+      value.cacheHitRate !== null
+    ) {
+      return 'result execution.usage status UNAVAILABLE requires null token metrics';
+    }
+  }
+  if (value.status === 'PARTIAL' && value.stepsWithUsage === 0) {
+    return 'result execution.usage status PARTIAL requires some usable token usage';
+  }
+  if (value.status === 'COMPLETE') {
+    if (value.stepsObserved === 0 || value.stepsWithUsage !== value.stepsObserved) {
+      return 'result execution.usage status COMPLETE requires usage for every observed step';
+    }
+    if (value.warnings.length > 0) {
+      return 'result execution.usage status COMPLETE requires no warnings';
+    }
+    for (const field of USAGE_CORE_FIELDS) {
+      if (value[field] === null) {
+        return `result execution.usage status COMPLETE requires ${field}`;
+      }
+    }
+    if (value.inputTokens > 0 && value.cacheHitRate === null) {
+      return 'result execution.usage status COMPLETE requires a cache hit rate for nonzero input';
+    }
+    if (value.inputTokens === 0 && value.cacheHitRate !== null) {
+      return 'result execution.usage cacheHitRate must be null when inputTokens is zero';
+    }
+  }
+
+  if (
+    value.reasoningTokens !== null &&
+    value.outputTokens !== null &&
+    value.reasoningTokens > value.outputTokens
+  ) {
+    return 'result execution.usage reasoningTokens must not exceed outputTokens';
+  }
+  if (value.totalTokens !== null && value.outputTokens !== null &&
+      value.totalTokens < value.outputTokens) {
+    return 'result execution.usage totalTokens must not be smaller than outputTokens';
+  }
+  if (value.totalTokens !== null && value.inputTokens !== null &&
+      value.totalTokens < value.inputTokens) {
+    return 'result execution.usage totalTokens must not be smaller than inputTokens';
+  }
+  if (value.totalTokens !== null) {
+    const knownLowerBound = [
+      value.inputUncachedTokens,
+      value.inputCacheHitTokens,
+      value.inputCacheWriteTokens,
+      value.outputTokens,
+    ].filter((tokenCount) => tokenCount !== null)
+      .reduce((sum, tokenCount) => sum + BigInt(tokenCount), 0n);
+    if (BigInt(value.totalTokens) < knownLowerBound) {
+      return 'result execution.usage totalTokens must not be smaller than known input/output components';
+    }
+  }
+  if (value.inputTokens !== null) {
+    for (const field of [
+      'inputUncachedTokens',
+      'inputCacheHitTokens',
+      'inputCacheWriteTokens',
+      'inputCacheMissTokens',
+    ]) {
+      if (value[field] !== null && value[field] > value.inputTokens) {
+        return `result execution.usage ${field} must not exceed inputTokens`;
+      }
+    }
+    const knownInputSum = [
+      value.inputUncachedTokens,
+      value.inputCacheHitTokens,
+      value.inputCacheWriteTokens,
+    ].filter((tokenCount) => tokenCount !== null)
+      .reduce((sum, tokenCount) => sum + BigInt(tokenCount), 0n);
+    if (knownInputSum > BigInt(value.inputTokens)) {
+      return 'result execution.usage inputTokens is smaller than its known cache buckets';
+    }
+  }
+  if (
+    value.inputCacheMissTokens !== null &&
+    value.inputUncachedTokens !== null &&
+    value.inputCacheMissTokens < value.inputUncachedTokens
+  ) {
+    return 'result execution.usage inputCacheMissTokens must not be smaller than inputUncachedTokens';
+  }
+  if (
+    value.inputCacheMissTokens !== null &&
+    value.inputCacheWriteTokens !== null &&
+    value.inputCacheMissTokens < value.inputCacheWriteTokens
+  ) {
+    return 'result execution.usage inputCacheMissTokens must not be smaller than inputCacheWriteTokens';
+  }
+  if (
+    value.inputTokens !== null &&
+    value.inputCacheHitTokens !== null &&
+    value.inputCacheMissTokens !== null &&
+    value.inputTokens !== value.inputCacheHitTokens + value.inputCacheMissTokens
+  ) {
+    return 'result execution.usage inputTokens must match cache hit plus cache miss';
+  }
+  if (
+    value.inputTokens !== null &&
+    value.inputUncachedTokens !== null &&
+    value.inputCacheHitTokens !== null &&
+    value.inputCacheWriteTokens !== null
+  ) {
+    const expected =
+      value.inputUncachedTokens + value.inputCacheHitTokens + value.inputCacheWriteTokens;
+    if (value.inputTokens !== expected) {
+      return 'result execution.usage inputTokens does not match its cache buckets';
+    }
+  }
+  if (
+    value.inputCacheMissTokens !== null &&
+    value.inputUncachedTokens !== null &&
+    value.inputCacheWriteTokens !== null &&
+    value.inputCacheMissTokens !== value.inputUncachedTokens + value.inputCacheWriteTokens
+  ) {
+    return 'result execution.usage inputCacheMissTokens does not match uncached plus cache write';
+  }
+  if (
+    value.totalTokens !== null &&
+    value.inputTokens !== null &&
+    value.outputTokens !== null &&
+    value.totalTokens !== value.inputTokens + value.outputTokens
+  ) {
+    return 'result execution.usage totalTokens does not match input plus output';
+  }
+  if (value.cacheHitRate !== null) {
+    if (
+      value.inputTokens === null ||
+      value.inputCacheHitTokens === null ||
+      value.inputTokens <= 0
+    ) {
+      return 'result execution.usage cacheHitRate requires known nonzero input and cache hit';
+    }
+    const expectedRate = value.inputCacheHitTokens / value.inputTokens;
+    if (Math.abs(value.cacheHitRate - expectedRate) > 1e-12) {
+      return 'result execution.usage cacheHitRate does not match cache hit divided by input';
+    }
+  } else if (
+    value.inputTokens !== null &&
+    value.inputCacheHitTokens !== null &&
+    value.inputTokens > 0
+  ) {
+    return 'result execution.usage cacheHitRate is missing for known cache hit and input';
+  }
+  return null;
+}
+
+function usageFallbackText(result) {
+  const tokens = result?.observations?.tokens;
+  if (!tokens) {
+    return (
+      'legacy result without execution.usage; raw input/output not reported ' +
+      '(deprecated; no cache-inclusive total is available)'
+    );
+  }
+  return (
+    `legacy result without execution.usage; raw input/output: ${formatTokens(tokens)} ` +
+    '(deprecated; raw input excludes cache; no cache-inclusive total is available)'
+  );
+}
+
+function formatUsageCount(value) {
+  return value === null || value === undefined
+    ? 'not reported'
+    : Number(value).toLocaleString('en-US');
+}
+
+function formatUsageRate(rate) {
+  return rate === null || rate === undefined
+    ? 'not available'
+    : `${(rate * 100).toFixed(2)}%`;
+}
+
+export function usageTerminalLine(result) {
+  const usage = result?.execution?.usage;
+  if (!isPlainObject(usage)) return `token usage: ${usageFallbackText(result)}`;
+  return (
+    `token usage (${usage.scope}, ${usage.source}, ${usage.status}): ` +
+    `steps ${usage.stepsWithUsage}/${usage.stepsObserved} | ` +
+    `input total ${formatUsageCount(usage.inputTokens)} ` +
+    `(uncached ${formatUsageCount(usage.inputUncachedTokens)}, ` +
+    `cache hit ${formatUsageCount(usage.inputCacheHitTokens)}, ` +
+    `cache miss ${formatUsageCount(usage.inputCacheMissTokens)} including write ` +
+    `${formatUsageCount(usage.inputCacheWriteTokens)}) | ` +
+    `output ${formatUsageCount(usage.outputTokens)} ` +
+    `(reasoning ${formatUsageCount(usage.reasoningTokens)}; included in output when reported, ` +
+    'never added again) | ' +
+    `total ${formatUsageCount(usage.totalTokens)} | ` +
+    `cache hit rate ${formatUsageRate(usage.cacheHitRate)}`
+  );
+}
+
+function usageWarningsLine(result) {
+  const warnings = result?.execution?.usage?.warnings;
+  if (!Array.isArray(warnings) || warnings.length === 0) return null;
+  const shown = warnings.slice(0, 2).join('; ');
+  const more = warnings.length > 2 ? `; (+${warnings.length - 2} more)` : '';
+  return `token usage warnings: ${warnings.length} (${truncate(shown, 300)}${more})`;
+}
+
 // --------------------------------------------------------------------------- event stream
 
 export function parseEventStream(eventsPath, requestedSession) {
@@ -1329,6 +1929,68 @@ function buildResult(facts) {
     ...new Set([...suppliedCaptureErrors, ...events.captureErrors]),
   ];
 
+  const usageQualityWarnings = [];
+  if (executionStatus === 'TIMEOUT') {
+    usageQualityWarnings.push(
+      'execution timed out; unreported or in-flight token usage is unknown',
+    );
+  } else if (executionStatus === 'FAILED') {
+    usageQualityWarnings.push(
+      `execution failed with exit code ${facts.exitCode}; unreported or in-flight token usage is unknown`,
+    );
+  } else if (executionStatus === 'LAUNCH_FAILED') {
+    usageQualityWarnings.push(
+      'execution did not launch normally; unreported or in-flight token usage is unknown',
+    );
+  }
+  if (captureErrors.length > 0) {
+    usageQualityWarnings.push(
+      'event capture was incomplete; unreported or in-flight token usage is unknown',
+    );
+  }
+  if (events.malformedLineNumbers.length > 0) {
+    usageQualityWarnings.push(
+      'the event stream contained malformed lines; token usage may be incomplete and ' +
+        'unreported or in-flight usage is unknown',
+    );
+  }
+  if (!events.turnEnd) {
+    usageQualityWarnings.push(
+      'no turn_end event was captured; token usage may be incomplete and unreported or ' +
+        'in-flight usage is unknown',
+    );
+  } else if (events.turnEnd.reason !== 'completed') {
+    usageQualityWarnings.push(
+      `turn_end reason was ${JSON.stringify(events.turnEnd.reason)} rather than "completed"; ` +
+        'token usage may be incomplete and unreported or in-flight usage is unknown',
+    );
+  }
+  if (!events.finalEventPresent) {
+    usageQualityWarnings.push(
+      'no final event was captured; token usage may be incomplete and unreported or ' +
+        'in-flight usage is unknown',
+    );
+  }
+  if (events.errorText !== null) {
+    usageQualityWarnings.push(
+      'an error event was captured; token usage may be incomplete and unreported or ' +
+        'in-flight usage is unknown',
+    );
+  }
+  const invocationComplete =
+    executionStatus === 'SUCCEEDED' &&
+    !facts.timedOut &&
+    !facts.launchFailed &&
+    captureErrors.length === 0 &&
+    events.malformedLineNumbers.length === 0 &&
+    events.turnEnd?.reason === 'completed' &&
+    events.finalEventPresent &&
+    events.errorText === null;
+  const usage = computeRunUsage(events.events, {
+    invocationComplete,
+    completenessWarnings: usageQualityWarnings,
+  });
+
   const acceptance = {
     status: 'PENDING',
     coverage: report.acceptance?.coverage ?? (facts.manifest?.declared ? 'INCOMPLETE' : 'NOT_DECLARED'),
@@ -1372,6 +2034,7 @@ function buildResult(facts) {
         preflightObjectLimit: facts.settings.preflightObjectLimit,
         timeoutMinutes: facts.settings.timeoutMinutes,
       },
+      usage,
     },
     task,
     report: {
@@ -1428,6 +2091,54 @@ function renderCheckRow(check) {
   return `| ${markdownCell(check.id)}${check.additional ? ' (additional)' : ''} | ${markdownCell(check.status)} | ${check.exitCode === null ? 'null' : check.exitCode} | ${markdownCell(log)} | ${markdownCell(check.reason)} |`;
 }
 
+function renderUsageMarkdown(result) {
+  const lines = ['### Token usage', ''];
+  const usage = result.execution?.usage;
+  if (!isPlainObject(usage)) {
+    lines.push(`${usageFallbackText(result)}.`);
+    return lines;
+  }
+  lines.push(
+    'Scope: **RUN** - this bridge invocation only, not a lifetime session total.',
+  );
+  lines.push('');
+  lines.push('| field | value |');
+  lines.push('|---|---|');
+  lines.push(`| scope | ${markdownCell(usage.scope)} |`);
+  lines.push(`| source | ${markdownCell(usage.source)} |`);
+  lines.push(`| status | ${markdownCell(usage.status)} |`);
+  lines.push(`| steps observed | ${formatUsageCount(usage.stepsObserved)} |`);
+  lines.push(`| steps with usage | ${formatUsageCount(usage.stepsWithUsage)} |`);
+  lines.push(`| input total | ${formatUsageCount(usage.inputTokens)} |`);
+  lines.push(`| input uncached | ${formatUsageCount(usage.inputUncachedTokens)} |`);
+  lines.push(`| cache hit | ${formatUsageCount(usage.inputCacheHitTokens)} |`);
+  lines.push(
+    `| cache miss (includes cache write) | ${formatUsageCount(usage.inputCacheMissTokens)} |`,
+  );
+  lines.push(
+    `| cache write (included in cache miss) | ${formatUsageCount(usage.inputCacheWriteTokens)} |`,
+  );
+  lines.push(`| output | ${formatUsageCount(usage.outputTokens)} |`);
+  lines.push(
+    `| reasoning (included in output; not added separately) | ${formatUsageCount(usage.reasoningTokens)} |`,
+  );
+  lines.push(`| total (input + output) | ${formatUsageCount(usage.totalTokens)} |`);
+  lines.push(
+    `| cache hit rate (cache hit / input) | ${formatUsageRate(usage.cacheHitRate)} |`,
+  );
+  lines.push('');
+  lines.push(
+    'Cache write is included in cache miss and reasoning is included in output; ' +
+      'neither is added again in the total.',
+  );
+  if (Array.isArray(usage.warnings) && usage.warnings.length > 0) {
+    lines.push('');
+    lines.push('Warnings:');
+    for (const warning of usage.warnings) lines.push(`- ${warning}`);
+  }
+  return lines;
+}
+
 function renderMarkdown(result, report, events, workingTree, stderrTail, runName) {
   const lines = [];
   const task = result.task;
@@ -1470,8 +2181,9 @@ function renderMarkdown(result, report, events, workingTree, stderrTail, runName
   lines.push(`| configuration | ${execution.settings.configuration} |`);
   lines.push(`| duration | ${formatDuration(execution.durationMs)} |`);
   lines.push(`| tool calls | ${result.observations.toolCalls} (${result.observations.toolErrors} failed) |`);
-  lines.push(`| tokens | ${formatTokens(result.observations.tokens)} |`);
   lines.push(`| turn end | ${events.turnEnd?.reason ?? '(none)'}${events.turnEnd?.error ? ` - ${events.turnEnd.error}` : ''} |`);
+  lines.push('');
+  lines.push(...renderUsageMarkdown(result));
   lines.push('');
   lines.push('## Implementer task claim (not acceptance)');
   lines.push('');
@@ -1644,6 +2356,9 @@ function summaryLines(result) {
   if (result.sessionId) lines.push(`session: ${result.sessionId}`);
   lines.push(`result: ${result.artifacts.result}`);
   lines.push(`report: ${result.artifacts.report}`);
+  lines.push(usageTerminalLine(result));
+  const usageWarning = usageWarningsLine(result);
+  if (usageWarning) lines.push(usageWarning);
   if (workingTree.status === 'UNAVAILABLE') {
     lines.push(`observed during this run: UNAVAILABLE (${workingTree.reason ?? 'unknown reason'})`);
   } else {
@@ -1657,7 +2372,7 @@ function summaryLines(result) {
   }
   lines.push(
     `implementer-claimed changes: ${result.observations.implementerClaimedChanges.length} path(s); ` +
-      `tool errors: ${result.observations.toolErrors}; tokens: ${formatTokens(result.observations.tokens)}`,
+      `tool errors: ${result.observations.toolErrors}`,
   );
   if (result.report.errors.length > 0) {
     lines.push(`report diagnostics: ${truncate(result.report.errors[0], 300)}`);
@@ -1707,6 +2422,12 @@ export function validateResultRecord(value) {
   if (!Number.isInteger(value.execution.bridgeExitCode)) return 'result execution.bridgeExitCode must be an integer';
   if (!(value.execution.originalExitCode === null || Number.isInteger(value.execution.originalExitCode))) {
     return 'result execution.originalExitCode must be an integer or null';
+  }
+  // execution.usage is additive in schemaVersion 1. Older result records without it stay
+  // readable; a present value must pass the telemetry schema before MCP returns it.
+  if (Object.hasOwn(value.execution, 'usage')) {
+    const usageError = validateUsageRecord(value.execution.usage);
+    if (usageError) return usageError;
   }
   if (!isPlainObject(value.task)) return 'result task is missing';
   if (!TASK_STATUSES.includes(value.task.status)) return 'result task.status is not recognized';

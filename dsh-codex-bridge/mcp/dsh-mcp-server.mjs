@@ -21,7 +21,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 
-import { readResultArtifact } from '../node/run-report.mjs';
+import { readResultArtifact, usageTerminalLine } from '../node/run-report.mjs';
 
 const SERVER_NAME = 'dsh-bridge';
 const SERVER_VERSION = '0.2.0';
@@ -220,6 +220,9 @@ function summaryLine(stdout, prefix) {
 }
 
 function canonicalResultSummary(result, relativePath) {
+  // Always summarize the validated artifact metadata here. Captured stdout can contain
+  // implementer/raw model text that merely resembles a token usage line, so it is not a
+  // trustworthy substitute for the canonical result.
   return [
     `execution: ${result.execution.status} | task: ${result.task.status} (implementer claim) | ` +
       `report: ${result.report.validity} | acceptance: ${result.acceptance.status}`,
@@ -227,6 +230,7 @@ function canonicalResultSummary(result, relativePath) {
       `missing ${result.acceptance.missingCheckIds.length}`,
     `result: ${relativePath}`,
     `report: ${result.artifacts.report}`,
+    usageTerminalLine(result),
   ].join('\n');
 }
 

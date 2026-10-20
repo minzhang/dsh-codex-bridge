@@ -161,9 +161,10 @@ or timeout 124; 65 means a zero-exit run had a missing/invalid report). It write
 in the target repository. These task artifacts are separate from the reusable package; no
 package script requires an old `.dsh-runs` folder. Output previews may be truncated, so save
 complete test logs and inspect their actual exit status rather than relying on the model's
-summary alone. Stdout keeps the existing `config:`, `dsh:`, `session:` and `report:` lines and
-adds `result:` with the repository-relative result file path; the four outcome dimensions and
-artifact pointers appear before the raw implementer message.
+summary alone. Stdout keeps the existing `config:`, `dsh:`, `session:` and `report:` lines,
+adds `result:` with the repository-relative result file path, and adds one concise
+`token usage (...)` line; the four outcome dimensions and artifact pointers appear before the
+raw implementer message.
 
 ### Run result contract
 
@@ -211,6 +212,23 @@ repository, otherwise absolute):
       "configuration": "string",
       "preflightObjectLimit": "integer",
       "timeoutMinutes": "integer"
+    },
+    "usage": {
+      "scope": "RUN",
+      "source": "DSH_STEP_END",
+      "status": "COMPLETE | PARTIAL | UNAVAILABLE",
+      "stepsObserved": "integer",
+      "stepsWithUsage": "integer",
+      "inputTokens": "integer or null",
+      "inputUncachedTokens": "integer or null",
+      "inputCacheHitTokens": "integer or null",
+      "inputCacheMissTokens": "integer or null",
+      "inputCacheWriteTokens": "integer or null",
+      "outputTokens": "integer or null",
+      "reasoningTokens": "integer or null",
+      "totalTokens": "integer or null",
+      "cacheHitRate": "number from 0 to 1, or null",
+      "warnings": ["string"]
     }
   },
   "task": {
@@ -309,9 +327,66 @@ repository, otherwise absolute):
 }
 ```
 
-`tokens` may be `null` when DSH reported no usage, and `lastValidEvent`/`turnEnd` may be
-`null`. `workingTree.counts` appears when observation is `OBSERVED`; `paths` is empty when it
-is `UNAVAILABLE`.
+`lastValidEvent`/`turnEnd` may be `null`. `workingTree.counts` appears when observation is
+`OBSERVED`; `paths` is empty when it is `UNAVAILABLE`.
+
+`observations.tokens` is **deprecated** legacy raw `input`/`output` accounting from
+`step_end` events. Its `input` excludes both DSH cache buckets and is not a cache-inclusive
+input total. It remains for old consumers and existing assertions; new human, terminal and
+MCP summaries use `execution.usage`. It may be `null` when DSH reported no usage, and null is
+never treated as zero usage.
+
+### Runtime token usage
+
+`execution.usage` is telemetry for **this bridge invocation** (`scope: RUN`) only. It is not
+a lifetime session total: a resumed session has separate runs, and earlier runs or private
+session storage are never scanned. `source: DSH_STEP_END` means only `status` /
+`phase: step_end` events from this run's captured JSONL contribute; usage on other event
+types is ignored so it cannot be counted twice. These are sums across model calls, so
+repeated or cached context is counted on each call; they are not the number of distinct
+tokens or the context-window size. A missing usage object is not zero. An explicitly
+reported all-zero sample is valid and is distinct from no sample.
+
+Per step, DSH's `inputTokens` is uncached input; `cacheReadTokens` is cache hit;
+`cacheWriteTokens` is cache write. The bridge normalizes:
+
+| Metric | Formula |
+|---|---|
+| `inputUncachedTokens` | DSH `inputTokens` |
+| `inputCacheHitTokens` | DSH `cacheReadTokens` |
+| `inputCacheWriteTokens` | DSH `cacheWriteTokens` |
+| `inputCacheMissTokens` | uncached + cache write |
+| `inputTokens` | uncached + cache hit + cache write |
+| `outputTokens` | DSH `outputTokens` |
+| `totalTokens` | input total + output |
+| `cacheHitRate` | run cache hit / run input total (null for zero input) |
+
+`reasoningTokens`, when supplied, is a subset of output and is never added to the total a
+second time. Cache absence is not treated as zero. When cache buckets are absent but a valid
+reported total and output exist, the input total may be derived by subtraction while the
+missing cache breakdown stays null. A reported total that contradicts complete components is
+warned and the contradictory derived input/total/rate become null rather than an arbitrary
+number. Invalid present values (negative, fractional, string, null, unsafe integer), sum
+overflow, and reasoning greater than output stay unknown and generate warnings.
+
+Each metric is aggregated only when it is known for every observed `step_end` event; a
+missing or invalid step value makes that aggregate null instead of an apparently complete
+subtotal. Independent known metrics are preserved. `COMPLETE` requires all core buckets and
+totals known, no accounting warnings, usage on every observed step, and a fully captured
+normally completed invocation. `PARTIAL` means some usage was reported but required data or
+execution/capture completeness is missing; timeouts, failures, capture errors, malformed
+events and missing completion keep available counts but explain that unreported or
+in-flight usage is unknown. `UNAVAILABLE` means no usable counts. Telemetry status and
+warnings do not change execution status, task/report validity or acceptance.
+
+Markdown execution information includes a separate `Token usage` subsection, and the
+terminal summary has one concise token line. Both identify RUN scope, completeness and all
+breakdowns, label cache write as included in cache miss and reasoning as included in output,
+and say `not reported` for unknown counts (`not available` for an unknown rate). MCP returns
+the same object in `structuredContent` and uses the same values in its text summary. New
+results validate `execution.usage` before MCP returns them. Older results without it remain
+readable and render a clearly labeled deprecated raw-input/output fallback that never claims
+a cache-inclusive total.
 
 The bridge asks DSH for one JSON object as its final message; legacy `STATUS:` prose is
 retained as raw diagnostic text but marked invalid. The bridge never executes commands named
