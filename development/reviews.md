@@ -94,3 +94,115 @@ live delegation have not been independently exercised for this entry point.
 Local acceptance: skill validation passed; both route dry runs passed; all 12 ordinary bridge
 tests, Windows syntax/boundary/ACL checks, demo typecheck/build and all 148 ordinary demo tests
 passed with no failures or skips. Evidence stays ignored under `.dsh-runs/skill-checks/`.
+
+## Default configuration and folder object count — 2026-10-19
+
+**Acceptance: ACCEPTED after implementation, same-session rework and independent review.**
+
+The unlimited object-count default accepted here was subsequently superseded by the
+user's 28,000-object default request in [design 005](design/005-object-count-default.md).
+The following records the checks of the earlier implementation.
+
+The delivery folder now includes `bridge.config.json` with `reasoningEffort: "max"` and
+`codexReviewEdits: "Not Allow"`. `-Config`, `-ReasoningEffort` and `-CodexReviewEdits`
+resolve each value independently using explicit parameter, configuration file, then built-in
+default. Supported effort values are off/low/high/max. Invalid configuration fails before
+preflight or model launch. Missing implicit configuration retains max/Not Allow; an explicitly
+missing file fails. MCP exposes the same optional settings without injecting defaults over the
+project's choices.
+
+Every invocation writes a unique ignored YAML overlay and passes it through DSH's real
+`--patch` interface. It selects `deepseek-official/deepseek-flash` and the resolved effort,
+including when resuming a session. The prompt, dry run and normal report identify the effective
+configuration. The bridge does not edit global profiles or authentication. Portable instructions
+make Not Allow the default for Codex's post-review production/test edits; Allow permits only
+recorded local review fixes and focused tests. This instruction does not change sandbox powers.
+
+Windows setup now defaults to `-MaxObjects 0`, meaning no object-count cap. Check, Repair,
+Verify, Restore and ordinary bridge preflight retain their full scans and path/link/owner/ACL
+checks. Explicit positive limits remain available; negative values fail before mutation.
+Backups and restore-manifest validation retain their previous schema and integrity checks.
+
+DSH implemented the change and review corrections using Flash/Max, workspace-write confinement
+and normal Windows preflight. Rework reused the original session through the modified bridge;
+the live run succeeded with the generated max overlay and the implicit Not Allow configuration.
+Codex reviewed the diff and independently ran the ordinary acceptance checks. Review corrected
+the introductory role wording, added independent and combined parameter coverage and omitted-MCP
+argument coverage, and put the MCP test's temporary files under its verified suite fixture with
+one cleanup owner. All original 12 bridge tests and 148 demo tests remain; existing test files,
+the demo implementation and its assertions were not changed.
+
+| Acceptance check | Result |
+|---|---|
+| Complete bridge Node suite | Final 28 tests passed with no failures or skips in both DSH no-worker and Codex ordinary suites, including the restored combined-parameter case |
+| Windows syntax, boundaries and ACL regressions | Passed in DSH and independently on the host |
+| Large-tree and restore-manifest regression | 10,001 real files enumerated and loaded; finite-limit and pre-mutation negative-limit checks passed |
+| Demo typecheck/build and complete tests | Passed; 148 tests, no failures or skips, DSH sandbox and Codex ordinary host suites |
+| TypeScript NodeNext helper consumer | Passed in DSH and independently |
+| Copied kit with existing FullControl | Passed real confinement, no-op repair, alias refusal and exact rollback of 59 original descriptors |
+| Copied kit requiring temporary WRITE_OWNER | Passed the same checks and exact rollback of 59 original descriptors |
+| Skill validation and both delivery routes | Validator passed; direct-folder and installed-skill layout dry runs preserved complete project-local copies and omitted recovery state |
+| Live configured session resume | Passed with normal Windows readiness preflight, Flash/max, Not Allow and workspace-write |
+
+Both lifecycle tests used their own unique host-temp copied repositories. Their tested Windows
+runtime files match the final source; neither test repaired this repository. Recovery evidence
+remains at its original location with ignored indexes under `development/.state/`.
+
+The initial Codex-restricted demo run had nine file-save failures caused by host-sandbox EPERM;
+the complete ordinary host rerun passed all 148 tests without code or assertion changes. The
+skill validator reused its already available ignored Python dependency directory; no project
+dependency was added. Linux/macOS, other DSH versions and other project types remain unverified.
+
+Complete local logs and exit codes remain ignored under `.dsh-runs/config-checks/` and
+`.dsh-runs/config-review/`; live reports and per-run overlays are under
+`.dsh-runs/config-implementation/`, `.dsh-runs/config-rework/` and
+`.dsh-runs/config-coverage-rework/`. No credentials, raw transcripts or machine-specific recovery
+data are part of the tracked change.
+
+## Default 28,000-object limit and parameter guidance — 2026-10-20
+
+**Acceptance: ACCEPTED after same-session DSH implementation/rework and independent review.**
+
+The user's follow-up replaces the unlimited default with **28000** in Windows setup,
+New-SetupContext and the bridge's automatic preflight. Explicit positive values such as
+`-MaxObjects 50000` raise the cap; `0` retains its explicit unlimited meaning. All four setup
+actions use the selected limit. Documentation and limit-exceeded errors explain how to
+raise it and account for folders, metadata and repair headroom. The bridge forwards its
+selected limit to normal preflight, and MCP exposes optional validated `max_objects`,
+including explicit zero. Omission leaves the bridge default in control. The accepted
+Flash/max and Not Allow defaults from design 004 remain intact.
+
+DSH used Flash/max, workspace-write confinement and normal Windows preflight, resuming the
+same session. Review restored explicit-zero enumeration and manifest loading on the real
+28001-object fixture, preserving exact/every-file counts and the existing small-fixture,
+finite-limit and negative-before-mutation checks. No existing demo or original bridge
+regression assertions were removed. Ordinary and sandbox test-file lists remain identical.
+
+Codex made a documentation-only formatting correction: a blank line after #Requires lets
+PowerShell recognize each script's comment help. Host Get-Help now shows default 28000 and
+override guidance for setup.ps1 and dsh-impl.ps1. Parser-token comparison confirmed the
+executable code was unchanged. Codex did not edit production logic or test assertions.
+
+| Acceptance check | Result |
+|---|---|
+| Complete bridge Node suites | 30 passed, no failures or skips, DSH sandbox and Codex ordinary |
+| Complete Windows suites | Final suites passed independently in DSH and on the host |
+| Real tree and restore-manifest boundaries | 28000 accepted by default; 28001 rejected by default with parameter guidance; 28001 accepted with 50000 and with explicit 0 |
+| Parameter handling | Default/50000/0 preflight forwarding, MCP schema/omission/exact forwarding and invalid-before-launch rejection passed |
+| Demo typecheck/build and full suites | 148 passed, no failures or skips, DSH sandbox and Codex ordinary |
+| TypeScript NodeNext helper consumer | Passed in both environments |
+| Both copied-kit Windows lifecycle scenarios | Real confinement, no-op repair, unsafe-link refusal and exact rollback passed; only unique host-temp fixtures were repaired |
+| Both delivery routes | Complete direct-folder and installed-skill copies and project-local dry runs passed |
+| Publication review | Local Markdown links, intended-file scope, sensitive-pattern scan and diff whitespace checks passed |
+
+The lifecycle-tested Windows implementation is unchanged except for the help-block spacing
+described above. Original recovery evidence stays local, with ignored indexes under
+development/.state/. The initial DSH targeted count check was interrupted while its output
+was buffered; it is not treated as a pass. The resumed complete final Windows suite finished
+successfully, as did Codex's final suite with the added large-zero assertions.
+
+Full check logs and exit codes are ignored under .dsh-runs/count-28000-checks/final/ and
+.dsh-runs/count-28000-review/. Live run evidence remains under
+.dsh-runs/count-28000-implementation/ and .dsh-runs/count-28000-rework/. No raw transcripts,
+credentials, temporary fixtures or machine-specific backups are included in publication.
+Linux/macOS, other DSH versions and other project types remain unverified.

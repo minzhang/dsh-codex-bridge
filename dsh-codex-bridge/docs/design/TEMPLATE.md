@@ -91,6 +91,10 @@ Order of work, if it matters:
 - Patterns to avoid: …
 - Dependencies: allowed / not allowed (name them)
 - Performance or size budgets: …
+- Post-review Codex edits follow the effective `codexReviewEdits` from
+  `dsh-codex-bridge/bridge.config.json` (or an explicit `-Config`): `Not Allow` delegates
+  production fixes and test additions to the same DSH session; `Allow` permits only small,
+  localized fixes tied to a recorded finding and a few focused regression/acceptance cases.
 
 ## 8. Open questions
 

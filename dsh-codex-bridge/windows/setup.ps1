@@ -1,4 +1,5 @@
 #Requires -Version 7.0
+
 <#
 .SYNOPSIS
   Check, repair, verify, or restore the Windows DSH workspace-write ACLs for a
@@ -32,7 +33,24 @@
   Optional DeepSeek Harness desktop installation directory for nondefault installs.
 
 .PARAMETER MaxObjects
-  Bounded tree limit (default 10000).
+  Maximum object count for every stage, including nested folders and metadata.
+  Default 28000. Use the same explicit positive Int32 (for example 50000) for
+  Check, Repair, Verify and Restore when a larger repository needs it; allow
+  headroom for repair metadata. 0 explicitly disables the count cap. Negative
+  values are rejected. Large trees need proportionate time and memory.
+
+.EXAMPLE
+  pwsh -NoProfile -File windows/setup.ps1 -Repo . -Action Check -MaxObjects 50000
+
+.EXAMPLE
+  pwsh -NoProfile -File windows/setup.ps1 -Repo . -Action Repair -Apply -MaxObjects 50000
+
+.EXAMPLE
+  pwsh -NoProfile -File windows/setup.ps1 -Repo . -Action Verify -MaxObjects 50000
+
+.EXAMPLE
+  pwsh -NoProfile -File windows/setup.ps1 -Repo . -Action Restore `
+    -Backup '<manifest.json>' -Apply -MaxObjects 50000
 #>
 [CmdletBinding()]
 param(
@@ -48,7 +66,7 @@ param(
 
     [string]$InstallDir = '',
 
-    [int]$MaxObjects = 10000
+    [int]$MaxObjects = 28000
 )
 
 Set-StrictMode -Version Latest

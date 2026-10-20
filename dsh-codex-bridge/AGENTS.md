@@ -23,15 +23,19 @@ Do not run Windows permission scripts on macOS/Linux. Distinguish DSH child conf
 the host permission needed to launch DSH or provision the approved repository. A blocked setup
 must state the exact evidence and recovery path; do not prescribe full-access mode as a shortcut.
 
-Use the user's requested model/effort (Flash/Max in this kit's onboarding example), preserving
-existing profile configuration. Report each phase after review and any rework; pause at phase
-boundaries when requested. A setup repair is not authorization to start the next development phase.
+Use the user's requested model/effort (Flash/Max in this kit's onboarding example). The bridge
+reads `bridge.config.json`, an explicit `-Config` file, or `-ReasoningEffort` and applies the
+selection through a run-scoped `--patch` overlay. It must not edit user profiles, credentials,
+authentication or unrelated settings. Report each phase after review and any rework; pause at
+phase boundaries when requested. A setup repair is not authorization to start the next
+development phase.
 
 Work in this repository is split between two agents. Do not blur the roles.
 
 - **Design agent (Codex)** — owns requirements, interface and data design, task
-  decomposition, review, and merge decisions. It may write design documents, tests it
-  intends to review, and trivial mechanical fixes. It does not implement features.
+  decomposition, review, and merge decisions. It writes design documents. Production code
+  and test edits are governed by the Codex review edits policy below; it does not implement
+  features.
 - **Implementation agent (DeepSeek Harness)** — writes production code, runs the checks,
   and fixes failures within the scope of exactly one design document.
 
@@ -55,6 +59,25 @@ Work in this repository is split between two agents. Do not blur the roles.
    leaves the changes uncommitted. It reports `STATUS: DONE | BLOCKED | PARTIAL`.
 4. The design agent reviews `git diff` plus the run report in `.dsh-runs/`, reruns the
    acceptance checks itself, and then either merges or delegates a corrective round.
+
+## Codex review edits policy
+
+Before making any post-review edit, consult the effective `codexReviewEdits` value: read
+`bridge.config.json`, an explicit `-Config`, or the run report/dry-run output. The default is
+`Not Allow`.
+
+- **`Not Allow`** — Codex reviews, runs checks, records findings, and delegates production
+  fixes and test additions to the same DSH session. It does not edit production code or tests
+  itself.
+- **`Allow`** — Codex may make only small, localized fixes tied to a recorded review finding,
+  plus a few focused regression/acceptance cases for that finding. Codex records what it
+  changed and independently runs the relevant checks.
+
+Feature implementation, large refactors, dependency changes and broad test-suite work stay with
+DSH under both settings. Never weaken existing assertions, and never count the same self-review
+as independent acceptance. This is a collaboration instruction, not an OS/security sandbox; it
+does not grant publication or unrelated permissions. Existing explicit user instructions take
+priority. Neither setting changes DSH's role or grants DSH commit/publication permission.
 
 ## Rules both agents follow
 

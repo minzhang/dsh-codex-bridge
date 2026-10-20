@@ -34,12 +34,17 @@ Everyone broad access, add unrestricted token groups, or change DSH to danger-fu
 - The script rejects unsafe roots, external aliases/reparse points, multiply-linked files,
   unexpected owners and unsupported ACL layouts. Resolve or separately review such cases;
   do not widen the root to a drive, home, or installation folder to bypass a refusal.
-- The default object limit bounds the scan. Dependency directories, metadata and other existing
-  descendants count too. Consult the script's parameters if an intentionally larger bound is needed.
-  A pnpm store with hard-linked dependencies may be refused; do not weaken link checks to force it.
+- `-MaxObjects` defaults to **28000** and counts folders and metadata as well as files. Every
+  descendant is scanned as before; do not exclude dependencies or metadata to reduce the count.
+  For a larger repository, supply the same explicit positive Int32 (for example `50000`) to
+  Check, Repair, Verify and Restore, with headroom for repair metadata. `-MaxObjects 0`
+  explicitly disables the cap; negative values are rejected. Large trees need proportionate
+  time and memory. If a tree scan or restore manifest exceeds the active cap, retry with
+  `-MaxObjects` and a larger explicit number. A pnpm store with hard-linked dependencies may be
+  refused; do not weaken link checks to force it.
 
 Windows applies inheritable root permission changes to descendants. The backup therefore covers
-the entire bounded tree, including metadata/dependencies. This is not an operation that can promise
+the entire scanned tree, including metadata/dependencies. This is not an operation that can promise
 unselected descendants' ACLs remain untouched. File contents, owners, original grants/denies and
 non-label audit information must remain intact.
 
@@ -49,6 +54,15 @@ From the repository root:
 
 ```powershell
 pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Check
+```
+
+Check uses the 28000-object default. For a larger repository, use one explicit cap at every
+stage, for example 50000:
+
+```powershell
+pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Check -MaxObjects 50000
+pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Repair -Apply -MaxObjects 50000
+pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Verify -MaxObjects 50000
 ```
 
 Check does not change permissions. If it reports missing readiness and the user has authorized
@@ -81,6 +95,10 @@ It never downloads or patches DSH. If bridge automatic discovery cannot find tha
 perform setup/verification explicitly and use `-Dsh '<launcher>' -SkipWindowsPreflight` for that
 diagnosed case. The opt-out skips only preflight; it does not disable DSH confinement.
 
+The bridge's normal preflight also accepts `-MaxObjects` (default 28000) and passes it to
+`setup.ps1 -Action Check -MaxObjects <value>`. Select a value large enough for the repository; a
+normal bridge run reports the selected preflight object limit.
+
 ## Project acceptance after setup
 
 1. Integrate a complete sandbox-compatible test command where needed.
@@ -103,8 +121,10 @@ repair, and run:
 
 ```powershell
 pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Restore `
-  -Backup '<absolute path to the saved backup JSON>' -Apply
+  -Backup '<absolute path to the saved backup JSON>' -Apply -MaxObjects 50000
 ```
+
+Use the same object limit that was used for Repair (or a larger explicit value) for Restore.
 
 Restore validates the saved root and each path before mutation. Owners are not changed. Windows
 may recompute inherited entries; inspect the restore verification, not just the process exit text.

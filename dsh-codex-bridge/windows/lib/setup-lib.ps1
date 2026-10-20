@@ -607,8 +607,8 @@ function Get-TreeEntries {
 
     $entries = [Collections.Generic.List[object]]::new()
     $entries.Add((New-TreeEntry -Root $Root -Path $Root -IsDirectory $true))
-    if ($entries.Count -gt $MaxObjects) {
-        throw (New-SetupException -Message "Repository tree exceeds the $MaxObjects-object safety limit. Reduce the repository or raise -MaxObjects only after review.")
+    if ($MaxObjects -gt 0 -and $entries.Count -gt $MaxObjects) {
+        throw (New-SetupException -Message "Repository tree exceeds the $MaxObjects-object safety limit. Retry with -MaxObjects and a larger explicit number (for example, -MaxObjects 50000) after review.")
     }
 
     $stack = [Collections.Generic.Stack[string]]::new()
@@ -626,8 +626,8 @@ function Get-TreeEntries {
                 throw (New-SetupException -Message "Reparse point/junction is not supported (links are never followed): $child")
             }
             $entries.Add((New-TreeEntry -Root $Root -Path $child -IsDirectory $isDirectory))
-            if ($entries.Count -gt $MaxObjects) {
-                throw (New-SetupException -Message "Repository tree exceeds the $MaxObjects-object safety limit. Reduce the repository or raise -MaxObjects only after review.")
+            if ($MaxObjects -gt 0 -and $entries.Count -gt $MaxObjects) {
+                throw (New-SetupException -Message "Repository tree exceeds the $MaxObjects-object safety limit. Retry with -MaxObjects and a larger explicit number (for example, -MaxObjects 50000) after review.")
             }
             if ($isDirectory) { $stack.Push($child) }
         }
@@ -749,11 +749,11 @@ function New-SetupContext {
         [bool]$Apply = $false,
         [string]$Backup = '',
         [string]$InstallDir = '',
-        [int]$MaxObjects = 10000
+        [int]$MaxObjects = 28000
     )
 
-    if ($MaxObjects -lt 1) {
-        throw (New-SetupException -Message '-MaxObjects must be a positive integer.' -ExitCode 2)
+    if ($MaxObjects -lt 0) {
+        throw (New-SetupException -Message '-MaxObjects must be zero (no count limit) or a positive integer.' -ExitCode 2)
     }
     if ($Action -eq 'Repair' -and -not $Apply) {
         $command = Get-RepairCommand -Repo ([IO.Path]::GetFullPath($Repo))
@@ -1019,8 +1019,8 @@ function Read-RestoreManifest {
     if ($objects.Count -eq 0) {
         throw (New-SetupException -Message "Restore manifest contains no objects: $backup")
     }
-    if ($objects.Count -gt $MaxObjects) {
-        throw (New-SetupException -Message "Restore manifest exceeds the $MaxObjects-object safety limit: $($objects.Count)")
+    if ($MaxObjects -gt 0 -and $objects.Count -gt $MaxObjects) {
+        throw (New-SetupException -Message "Restore manifest exceeds the $MaxObjects-object safety limit: $($objects.Count). Retry with -MaxObjects and a larger explicit number (for example, -MaxObjects 50000) after review.")
     }
     if ($null -ne $document.PSObject.Properties['objectCount'] -and [int]$document.objectCount -ne $objects.Count) {
         throw (New-SetupException -Message "Restore manifest objectCount does not match its object list: $backup")

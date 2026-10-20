@@ -20,6 +20,8 @@ const SUPPORTED_PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 
 const here = dirname(fileURLToPath(import.meta.url));
 const bridgeScript = resolve(join(here, '..', 'dsh-impl.ps1'));
+const REASONING_EFFORTS = ['off', 'low', 'high', 'max'];
+const CODEX_REVIEW_EDITS = ['Not Allow', 'Allow'];
 
 const TOOL = {
   name: 'dsh_implement',
@@ -56,6 +58,33 @@ const TOOL = {
       timeout_minutes: {
         type: 'number',
         description: 'Hard wall-clock limit for the run. Default 90.',
+      },
+      config: {
+        type: 'string',
+        description:
+          'Optional bridge configuration JSON path. Relative paths resolve against the repository root. ' +
+          'When omitted, the bridge uses bridge.config.json beside the bridge script or built-in defaults.',
+      },
+      reasoning_effort: {
+        type: 'string',
+        enum: REASONING_EFFORTS,
+        description:
+          'Optional reasoning effort. Overrides the configuration file; defaults to the configuration or max.',
+      },
+      codex_review_edits: {
+        type: 'string',
+        enum: CODEX_REVIEW_EDITS,
+        description:
+          'Optional post-review Codex edit policy. Overrides the configuration file; defaults to the ' +
+          'configuration or Not Allow.',
+      },
+      max_objects: {
+        type: 'integer',
+        minimum: 0,
+        maximum: 2147483647,
+        description:
+          'Optional maximum object count for the Windows sandbox preflight, including folders and metadata. ' +
+          'When omitted, the bridge uses its default. Use 0 to explicitly disable the count cap.',
       },
       skip_windows_preflight: {
         type: 'boolean',
@@ -143,6 +172,38 @@ function runBridge(args) {
   });
 }
 
+function invalidToolArgument(message) {
+  return { content: [{ type: 'text', text: message }], isError: true };
+}
+
+function validateBridgeArguments(args) {
+  if (args.config !== undefined) {
+    if (typeof args.config !== 'string' || args.config.trim() === '') {
+      return invalidToolArgument('argument "config" must be a non-empty string');
+    }
+  }
+  if (args.reasoning_effort !== undefined && !REASONING_EFFORTS.includes(args.reasoning_effort)) {
+    return invalidToolArgument(
+      `argument "reasoning_effort" must be one of: ${REASONING_EFFORTS.join(', ')}`,
+    );
+  }
+  if (args.codex_review_edits !== undefined && !CODEX_REVIEW_EDITS.includes(args.codex_review_edits)) {
+    return invalidToolArgument(
+      `argument "codex_review_edits" must be one of: ${CODEX_REVIEW_EDITS.map((value) => `"${value}"`).join(', ')}`,
+    );
+  }
+  if (
+    args.max_objects !== undefined &&
+    (typeof args.max_objects !== 'number' ||
+      !Number.isInteger(args.max_objects) ||
+      args.max_objects < 0 ||
+      args.max_objects > 2147483647)
+  ) {
+    return invalidToolArgument('argument "max_objects" must be an integer from 0 to 2147483647');
+  }
+  return null;
+}
+
 async function callTool(name, args) {
   if (name !== TOOL.name) {
     return { content: [{ type: 'text', text: `unknown tool: ${name}` }], isError: true };
@@ -150,6 +211,8 @@ async function callTool(name, args) {
   if (typeof args?.spec !== 'string' || args.spec.trim() === '') {
     return { content: [{ type: 'text', text: 'argument "spec" is required' }], isError: true };
   }
+  const invalid = validateBridgeArguments(args);
+  if (invalid) return invalid;
 
   const cli = ['-Spec', args.spec];
   if (args.task) cli.push('-Task', String(args.task));
@@ -157,6 +220,10 @@ async function callTool(name, args) {
   if (args.repo) cli.push('-Repo', String(args.repo));
   if (args.mode) cli.push('-Mode', String(args.mode));
   if (typeof args.timeout_minutes === 'number') cli.push('-TimeoutMinutes', String(args.timeout_minutes));
+  if (args.config !== undefined) cli.push('-Config', args.config);
+  if (args.reasoning_effort !== undefined) cli.push('-ReasoningEffort', args.reasoning_effort);
+  if (args.codex_review_edits !== undefined) cli.push('-CodexReviewEdits', args.codex_review_edits);
+  if (args.max_objects !== undefined) cli.push('-MaxObjects', String(args.max_objects));
   if (args.skip_windows_preflight === true) cli.push('-SkipWindowsPreflight');
 
   const result = await runBridge(cli);

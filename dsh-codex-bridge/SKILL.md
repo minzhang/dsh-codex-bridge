@@ -33,10 +33,13 @@ the shared skill installation or treat the skills directory as the target projec
 
 ## Prepare DSH
 
-Check the README prerequisites and existing DSH authentication. Use its **Model and authentication**
-section for the requested model/effort. Flash with Max effort uses the headless profile fields
-`model: deepseek-flash` and `reasoningEffort: max`; these are not bridge command-line options.
-Preserve unrelated profile settings and never print or copy credentials into the project.
+Check the README prerequisites and existing DSH authentication. Use its **Model, effort, and
+Codex review policy** section. The bridge selects DeepSeek Flash and the requested effort for
+each invocation through a run-scoped `--patch` overlay; its shipped `bridge.config.json`
+defaults to `reasoningEffort: max` and `codexReviewEdits: Not Allow`. `-Config`,
+`-ReasoningEffort`, and `-CodexReviewEdits` override the file per setting. Do not edit global
+profiles, credentials or unrelated settings, and never print or copy credentials into the
+project.
 
 Keep DSH's `workspace-write` sandbox and normal Windows preflight enabled. On Windows, read
 [docs/windows-sandbox.md](docs/windows-sandbox.md), run Check, perform the documented bounded
@@ -65,7 +68,15 @@ project types need separate validation; do not run Windows ACL repair there.
 3. Inspect the run report and actual diff, including newly created files. `STATUS: DONE` means
    ready for review. Independently run the acceptance checks and inspect actual counts/failures.
    On the affected Windows backend, DSH uses the complete sandbox-compatible suite and Codex also
-   runs the ordinary suite on a compatible host.
+   runs the ordinary suite on a compatible host. Before any post-review edit, read the effective
+   `codexReviewEdits` from `bridge.config.json`, an explicit `-Config`, or the run report. The
+   default `Not Allow` means Codex records findings and delegates production fixes and test
+   additions to the same DSH session. `Allow` permits only small, localized fixes tied to a
+   recorded finding and a few focused regression/acceptance cases; record those changes and
+   independently run the relevant checks. Feature work, large refactors, dependency changes and
+   broad test-suite work stay with DSH. Never weaken assertions or treat the same self-review as
+   independent acceptance. This collaboration policy is not an OS/security sandbox and grants no
+   publication or unrelated permissions; explicit user instructions take priority.
 4. Record actionable review findings in the design. For corrections, use the **session ID from
    that run's report** and the **same target repository**:
 

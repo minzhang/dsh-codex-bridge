@@ -73,7 +73,20 @@ Give the next Codex this instruction:
    # If Check reports missing permissions, with authorization to repair this repository:
    pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Repair -Apply
    pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Verify
+
+   # For a larger repository, use the same explicit cap at every stage, for example 50000:
+   pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Check -MaxObjects 50000
+   pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Repair -Apply -MaxObjects 50000
+   pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Verify -MaxObjects 50000
+   pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Restore `
+     -Backup '<absolute path to the saved backup JSON>' -Apply -MaxObjects 50000
    ```
+
+   `-MaxObjects` defaults to 28000 and counts folders and metadata as well as files. Any
+   desired positive Int32 can be supplied; use the same value for all stages and allow
+   headroom for repair metadata. `-MaxObjects 0` explicitly disables the cap. Larger trees
+   need proportionate time and memory. Preflight reports the active limit; if a scan or
+   restore manifest exceeds it, retry with `-MaxObjects` and a larger explicit number.
 
    Check inspects readiness. Repair saves permission backups before applying the bounded fix.
    Verify launches actual confined processes and checks outside-write denial. These are setup
@@ -99,11 +112,12 @@ pwsh -NoProfile -File dsh-codex-bridge/dsh-impl.ps1 -Spec docs/design/001-exampl
   -Session session-<id-from-report> -Task 'Apply the reviewer feedback recorded in the design.'
 ```
 
-The bridge passes the design to `dsh headless --json`, captures the event stream and final report,
-and returns DSH's exit code. It writes `.dsh-runs/<timestamp>-{prompt.md,events.jsonl,report.md,stderr.log}`
-in the target repository. These task artifacts are separate from the reusable package; no package
-script requires an old `.dsh-runs` folder. Output previews may be truncated, so save complete test
-logs and inspect their actual exit status rather than relying on the model's summary alone.
+The bridge passes the design to `dsh headless --patch <run-patch.yml> --json`, captures the
+event stream and final report, and returns DSH's exit code. It writes
+`.dsh-runs/<timestamp>-<run-id>-{prompt.md,events.jsonl,report.md,stderr.log,patch.yml}` in the
+target repository. These task artifacts are separate from the reusable package; no package
+script requires an old `.dsh-runs` folder. Output previews may be truncated, so save complete
+test logs and inspect their actual exit status rather than relying on the model's summary alone.
 
 | Parameter | Default | Purpose |
 |---|---|---|
@@ -113,20 +127,28 @@ logs and inspect their actual exit status rather than relying on the model's sum
 | `-Session` | new session | Continue an earlier session in the same repository |
 | `-Mode` | `workspace-write` | DSH permission mode |
 | `-TimeoutMinutes` | `90` | Run wall-clock limit |
+| `-MaxObjects` | `28000` | Windows preflight object cap; `0` disables it, any positive Int32 such as `50000` may be used |
 | `-OutDir` | `.dsh-runs` | Run artifacts |
 | `-Dsh` | PATH / desktop fallback | Explicit DSH launcher |
-| `-DryRun` | off | Prepare/print the prompt without starting DSH |
+| `-Config` | `bridge.config.json` beside the script | Configuration file; explicit relative paths resolve against `-Repo` |
+| `-ReasoningEffort` | configuration / `max` | `off`, `low`, `high`, or `max` |
+| `-CodexReviewEdits` | configuration / `Not Allow` | `Not Allow` or `Allow` |
+| `-DryRun` | off | Print resolved settings, prompt and command without starting DSH or preflight |
 | `-SkipWindowsPreflight` | off | Diagnostic opt-out from readiness checks; does not change confinement |
 
-Normal Windows workspace-write runs check readiness before starting the model. They never repair
-permissions automatically. Read-only runs, dry runs, and non-Windows runs do not need this check.
-For a nondefault desktop installation, use the setup tool's `-InstallDir`; consult the Windows guide
-for bridge invocation when automatic installation discovery does not match your launcher.
+Normal Windows workspace-write runs check readiness before starting the model. The bridge passes
+its effective `-MaxObjects` to `setup.ps1 -Action Check` and shows that value in dry-run output and
+the run report. Preflight never repairs permissions automatically. Read-only runs, dry runs, and
+non-Windows runs do not need this check. For a nondefault desktop installation, use the setup
+tool's `-InstallDir`; consult the Windows guide for bridge invocation when automatic installation
+discovery does not match your launcher.
 
-## Model and authentication
+## Model, effort, and Codex review policy
 
-The headless model comes from DSH's `agent-default-model` profile entry. Merge this into
-`~/.dsh/profiles/headless/cordis.patch.yml`, preserving other configuration:
+The bridge does not edit DSH profiles, credentials, authentication or global settings. For
+every normal run and dry run it generates a temporary, run-scoped YAML patch under `OutDir` and
+passes it to `dsh headless --patch <absolute-overlay-path>`. The overlay sets only the
+`agent-default-model` entry:
 
 ```yaml
 - id: agent-default-model
@@ -136,16 +158,45 @@ The headless model comes from DSH's `agent-default-model` profile entry. Merge t
     reasoningEffort: max
 ```
 
-The tested catalog labels this model alias DeepSeek-V4.1-Flash. The profile is read when the
-headless run starts. This package does not edit credentials or global profiles automatically.
-Use DSH's normal authentication setup or an existing `DEEPSEEK_API_KEY` environment variable.
-A missing key/profile is an authentication/setup problem, not a reason to disable confinement.
+This selects the model and effort for that invocation, including a resumed session and rework.
+The shipped `bridge.config.json` beside `dsh-impl.ps1` supplies the defaults:
+
+```json
+{
+  "reasoningEffort": "max",
+  "codexReviewEdits": "Not Allow"
+}
+```
+
+Each setting resolves independently: explicit command-line parameter, then configuration file,
+then built-in default (`max` / `Not Allow`). The implicit file is `bridge.config.json` beside
+the script; `-Config` selects another file, and an explicit relative path resolves against
+`-Repo`. An absent implicit file keeps the built-in defaults, while an explicitly named missing
+or invalid file fails before preflight or model launch. Supported effort values are `off`,
+`low`, `high`, `max`; the review policy is `Not Allow` or `Allow`. Values are case-insensitive;
+effective values are canonicalized to lower-case effort and `Not Allow`/`Allow`.
+
+The tested catalog labels this model alias DeepSeek-V4.1-Flash. Use DSH's normal authentication
+setup or an existing `DEEPSEEK_API_KEY` environment variable. A missing key/profile is an
+authentication/setup problem, not a reason to disable confinement.
+
+`codexReviewEdits` controls what Codex may do after reviewing a DSH run. `Not Allow` is the
+default: Codex reviews and runs checks, records findings, and delegates production fixes and
+test additions to the same DSH session. `Allow` permits only small, localized fixes tied to a
+recorded review finding, plus a few focused regression/acceptance cases for that finding; Codex
+records what it changed and independently runs the relevant checks. Feature implementation,
+large refactors, dependency changes and broad test-suite work stay with DSH. Codex never
+weakens existing assertions or counts the same self-review as independent acceptance. This is a
+collaboration instruction, not an OS/security sandbox; it does not grant publication or
+unrelated permissions. Existing explicit user instructions take priority. Neither setting
+changes DSH's role or grants DSH commit/publication permission.
 
 ## Package contents
 
 | Path | Purpose |
 |---|---|
 | `dsh-impl.ps1` | Design → DSH run → review report |
+| `bridge.config.json` | Shipped reasoning effort and Codex post-review edit policy |
 | `SKILL.md` | Optional Codex skill entry point for setup, delegation and review |
 | `agents/openai.yaml` | Codex skill display metadata |
 | `AGENTS.md` | Portable collaboration and onboarding instructions |
@@ -168,8 +219,13 @@ SIDs, credential files, or installed-runtime copies to transfer.
 codex mcp add dsh -- node C:\path\to\repo\dsh-codex-bridge\mcp\dsh-mcp-server.mjs
 ```
 
-The `dsh_implement` tool accepts `spec`, `task`, `session`, `repo`, `mode`, and `timeout_minutes`.
-Run Windows setup before using it. It calls the same bridge and preserves its preflight checks.
+The `dsh_implement` tool accepts `spec`, `task`, `session`, `repo`, `mode`, `timeout_minutes`,
+`config`, `reasoning_effort`, `codex_review_edits`, and `max_objects`. The configuration/effort/
+policy fields map to the bridge's `-Config`, `-ReasoningEffort`, and `-CodexReviewEdits`
+parameters, and `max_objects` maps to `-MaxObjects`; omitted values let the project's
+configuration and built-in defaults apply. `0` is forwarded as an explicit unlimited opt-out.
+Tool-schema defaults are descriptive only and are not injected into project settings. Run
+Windows setup before using it. It calls the same bridge and preserves its preflight checks.
 Direct PowerShell invocation is the clearest route for setup diagnostics.
 
 ## Verify a new project

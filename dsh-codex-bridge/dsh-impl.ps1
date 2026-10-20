@@ -1,4 +1,5 @@
 #Requires -Version 7.0
+
 <#
 .SYNOPSIS
   Hand one implementation task to DeepSeek Harness (`dsh headless`) and report the result.
@@ -8,11 +9,13 @@
   document, this script turns it into one non-interactive dsh run, and the final
   message plus the working-tree diff come back for review.
 
-  Every run writes three files under <repo>/<OutDir>:
-    <stamp>-prompt.md    the exact prompt sent to dsh
-    <stamp>-events.jsonl the --json event stream (session, tool_call, tool_result, final)
-    <stamp>-report.md    a reviewer-oriented summary
-  and one stderr log: <stamp>-stderr.log
+  Every run writes a unique set of files under <repo>/<OutDir>:
+    <run>-prompt.md      the exact prompt sent to dsh
+    <run>-patch.yml      the per-run agent-default-model overlay passed with --patch
+    <run>-events.jsonl   the --json event stream (session, tool_call, tool_result, final)
+    <run>-report.md      a reviewer-oriented summary
+    <run>-stderr.log     dsh stderr
+  where <run> is a timestamp plus a unique suffix.
 
 .PARAMETER Spec
   Path to the design document. Relative paths resolve against the repository root.
@@ -29,9 +32,28 @@
 .PARAMETER TimeoutMinutes
   Hard wall-clock limit. On expiry the run and any dsh process it started are killed.
 
+.PARAMETER MaxObjects
+  Maximum object count for the Windows sandbox preflight, including nested folders
+  and metadata. Default 28000; 0 explicitly disables the count cap. Any nonnegative
+  Int32 is accepted; larger repositories need a larger value and proportionate
+  time and memory. The value is passed to setup.ps1 -Action Check.
+
+.PARAMETER Config
+  Configuration file for this run. Relative paths resolve against the repository
+  root. The implicit file is bridge.config.json beside this script; when both are
+  absent, built-in defaults are used. An explicitly supplied missing file fails.
+
+.PARAMETER ReasoningEffort
+  Reasoning effort: off, low, high, or max (case-insensitive). Overrides the
+  configuration file. Canonical effective values are lower-case.
+
+.PARAMETER CodexReviewEdits
+  Post-review Codex edit policy: 'Not Allow' or 'Allow' (case-insensitive).
+  Overrides the configuration file. Defaults to 'Not Allow'.
+
 .PARAMETER DryRun
-  Print the composed prompt and the dsh command, but do not run dsh or the
-  Windows sandbox preflight.
+  Print the resolved settings, composed prompt, generated patch, and dsh command,
+  but do not run dsh or the Windows sandbox preflight.
 
 .PARAMETER SkipWindowsPreflight
   Diagnose an unsupported Windows installation by skipping the read-only
@@ -57,13 +79,21 @@ param(
     [string]$Repo = '',
     [string]$OutDir = '.dsh-runs',
     [int]$TimeoutMinutes = 90,
+    [int]$MaxObjects = 28000,
     [string]$Dsh = '',
+    [string]$Config = '',
+    [string]$ReasoningEffort = '',
+    [string]$CodexReviewEdits = '',
     [switch]$DryRun,
     [switch]$SkipWindowsPreflight
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if ($MaxObjects -lt 0) {
+    throw '-MaxObjects must be a nonnegative Int32 (0 explicitly disables the count limit).'
+}
 
 # --------------------------------------------------------------------------- helpers
 
@@ -143,9 +173,160 @@ function Stop-OrphanDsh {
     return @($victims).Count
 }
 
+function Convert-ReasoningEffortSetting {
+    param([string]$Value, [string]$Label)
+
+    $canonical = @{
+        'off'  = 'off'
+        'low'  = 'low'
+        'high' = 'high'
+        'max'  = 'max'
+    }
+    $candidate = $Value.Trim()
+    if (-not $canonical.ContainsKey($candidate)) {
+        throw "$Label must be one of: off, low, high, max."
+    }
+    return $canonical[$candidate]
+}
+
+function Convert-CodexReviewEditsSetting {
+    param([string]$Value, [string]$Label)
+
+    $canonical = @{
+        'not allow' = 'Not Allow'
+        'allow'     = 'Allow'
+    }
+    $candidate = $Value.Trim()
+    if (-not $canonical.ContainsKey($candidate)) {
+        throw "$Label must be 'Not Allow' or 'Allow'."
+    }
+    return $canonical[$candidate]
+}
+
+function Resolve-BridgeConfigPath {
+    param(
+        [bool]$Explicit,
+        [string]$Path,
+        [string]$RepoRoot
+    )
+
+    if ($Explicit) {
+        if ([string]::IsNullOrWhiteSpace($Path)) {
+            throw 'Configuration path (-Config) must not be empty.'
+        }
+        $candidate = if ([IO.Path]::IsPathRooted($Path)) { $Path } else { Join-Path $RepoRoot $Path }
+        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+            throw "Configuration file not found: $candidate"
+        }
+        return (Resolve-Path -LiteralPath $candidate).Path
+    }
+
+    $implicit = Join-Path $PSScriptRoot 'bridge.config.json'
+    if (Test-Path -LiteralPath $implicit -PathType Leaf) {
+        return (Resolve-Path -LiteralPath $implicit).Path
+    }
+    return ''
+}
+
+function Read-BridgeConfig {
+    param([string]$Path)
+
+    try {
+        $raw = [IO.File]::ReadAllText($Path, [Text.UTF8Encoding]::new($false))
+    } catch {
+        throw "Configuration file could not be read: $Path"
+    }
+    try {
+        $document = ConvertFrom-Json -InputObject $raw -NoEnumerate -ErrorAction Stop
+    } catch {
+        throw "Configuration file is not valid JSON: $Path"
+    }
+    if ($null -eq $document -or $document -isnot [System.Management.Automation.PSCustomObject]) {
+        throw "Configuration root must be a JSON object: $Path"
+    }
+
+    $known = @('reasoningEffort', 'codexReviewEdits')
+    $properties = @($document.PSObject.Properties)
+    foreach ($property in $properties) {
+        if ($known -cnotcontains $property.Name) {
+            throw "Configuration contains an unknown setting '$($property.Name)': $Path"
+        }
+    }
+
+    $values = @{
+        reasoningEffort = $null
+        codexReviewEdits = $null
+    }
+    $effortProperty = @($properties | Where-Object { $_.Name -ceq 'reasoningEffort' } | Select-Object -First 1)
+    if ($effortProperty.Count -gt 0) {
+        $effortValue = $effortProperty[0].Value
+        if ($null -eq $effortValue -or $effortValue -isnot [string]) {
+            throw "Configuration setting 'reasoningEffort' must be a string: $Path"
+        }
+        $values.reasoningEffort = Convert-ReasoningEffortSetting -Value $effortValue -Label "Configuration setting 'reasoningEffort'"
+    }
+    $policyProperty = @($properties | Where-Object { $_.Name -ceq 'codexReviewEdits' } | Select-Object -First 1)
+    if ($policyProperty.Count -gt 0) {
+        $policyValue = $policyProperty[0].Value
+        if ($null -eq $policyValue -or $policyValue -isnot [string]) {
+            throw "Configuration setting 'codexReviewEdits' must be a string: $Path"
+        }
+        $values.codexReviewEdits = Convert-CodexReviewEditsSetting -Value $policyValue -Label "Configuration setting 'codexReviewEdits'"
+    }
+
+    return $values
+}
+
 # --------------------------------------------------------------------------- resolve inputs
 
+$configWasSpecified = $PSBoundParameters.ContainsKey('Config')
+$reasoningWasSpecified = $PSBoundParameters.ContainsKey('ReasoningEffort')
+$reviewPolicyWasSpecified = $PSBoundParameters.ContainsKey('CodexReviewEdits')
+$reasoningEffortParameter = $ReasoningEffort
+$codexReviewEditsParameter = $CodexReviewEdits
+
 $repoRoot = Resolve-RepoRoot -Hint $Repo
+
+$builtinReasoningEffort = 'max'
+$builtinCodexReviewEdits = 'Not Allow'
+$configPath = Resolve-BridgeConfigPath -Explicit $configWasSpecified -Path $Config -RepoRoot $repoRoot
+$configValues = @{ reasoningEffort = $null; codexReviewEdits = $null }
+if ($configPath) {
+    $configValues = Read-BridgeConfig -Path $configPath
+}
+
+$reasoningEffort = $builtinReasoningEffort
+$reasoningEffortSource = 'built-in default'
+if ($configValues.reasoningEffort) {
+    $reasoningEffort = $configValues.reasoningEffort
+    $reasoningEffortSource = $configPath
+}
+if ($reasoningWasSpecified) {
+    $reasoningEffort = Convert-ReasoningEffortSetting -Value $reasoningEffortParameter -Label '-ReasoningEffort'
+    $reasoningEffortSource = 'command line'
+}
+
+$codexReviewEdits = $builtinCodexReviewEdits
+$codexReviewEditsSource = 'built-in default'
+if ($configValues.codexReviewEdits) {
+    $codexReviewEdits = $configValues.codexReviewEdits
+    $codexReviewEditsSource = $configPath
+}
+if ($reviewPolicyWasSpecified) {
+    $codexReviewEdits = Convert-CodexReviewEditsSetting -Value $codexReviewEditsParameter -Label '-CodexReviewEdits'
+    $codexReviewEditsSource = 'command line'
+}
+
+$configSource = if (-not $configPath) {
+    'built-in defaults'
+}
+elseif ($configWasSpecified) {
+    "$configPath (explicit)"
+}
+else {
+    "$configPath (implicit)"
+}
+
 $dshPath = Resolve-Dsh -Explicit $Dsh
 
 $specPath = if ([IO.Path]::IsPathRooted($Spec)) { $Spec } else { Join-Path $repoRoot $Spec }
@@ -178,7 +359,7 @@ if (-not $DryRun -and $Mode -eq 'workspace-write' -and $isWindowsHost) {
             }
             $pwshExe = $pwshCommand.Source
         }
-        $preflight = @(& $pwshExe -NoProfile -NonInteractive -File $setupScript -Repo $repoRoot -Action Check 2>&1)
+        $preflight = @(& $pwshExe -NoProfile -NonInteractive -File $setupScript -Repo $repoRoot -Action Check -MaxObjects $MaxObjects 2>&1)
         $preflightExit = $LASTEXITCODE
         if ($preflightExit -ne 0) {
             Write-Output 'windows sandbox preflight: NOT READY'
@@ -201,6 +382,12 @@ Windows sandbox note: use the project's full sandbox-compatible test command. If
 '@
 }
 
+$modelConfigText = "Model selection for this invocation: provider deepseek-official, model deepseek-flash, reasoningEffort $reasoningEffort. This selection is supplied through a temporary --patch overlay; do not edit user profiles, credentials, authentication or settings."
+$codexPolicyText = @'
+Codex review policy for this run: <POLICY>.
+Under Not Allow, Codex reviews and runs checks, records findings, and delegates production fixes and test additions to this same DSH session. Under Allow, Codex may make only small, localized fixes tied to a recorded review finding and a few focused regression/acceptance cases for that finding; Codex records what it changed and independently runs the relevant checks. Feature implementation, large refactors, dependency changes and broad test-suite work stay with DSH. Codex never weakens existing assertions or counts the same self-review as independent acceptance. This is a collaboration instruction, not an OS/security sandbox; it does not grant publication or unrelated permissions. Existing explicit user instructions take priority. Neither setting changes DSH's role or grants DSH commit/publication permission.
+'@.Replace('<POLICY>', $codexReviewEdits)
+
 $promptTemplate = @'
 You are the implementation agent in a two-agent workflow. An architect agent wrote the design below; you implement it. No human is watching this run.
 
@@ -213,6 +400,11 @@ Design document: <SPEC> (authoritative, read-only)
 
 Extra instructions for this round:
 <TASK>
+
+Run configuration:
+<MODEL_CONFIG>
+
+<CODEX_POLICY>
 
 <WINDOWS_SANDBOX_NOTE>
 
@@ -236,36 +428,58 @@ $prompt = $promptTemplate.Replace('<REPO>', $repoRoot).
     Replace('<SPEC>', $relativeSpec).
     Replace('<DESIGN>', $design.Trim()).
     Replace('<TASK>', $taskBlock).
+    Replace('<MODEL_CONFIG>', $modelConfigText).
+    Replace('<CODEX_POLICY>', $codexPolicyText.Trim()).
     Replace('<WINDOWS_SANDBOX_NOTE>', $windowsSandboxNote.Trim())
 
 # --------------------------------------------------------------------------- prepare outputs
 
+$utf8 = [Text.UTF8Encoding]::new($false)
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$runName = "$stamp-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
 $runDir = if ([IO.Path]::IsPathRooted($OutDir)) { $OutDir } else { Join-Path $repoRoot $OutDir }
 New-Item -ItemType Directory -Force -Path $runDir | Out-Null
 # Keep the artifact directory out of the repository's diff without editing the user's .gitignore.
 $ignoreFile = Join-Path $runDir '.gitignore'
 if (-not (Test-Path -LiteralPath $ignoreFile)) {
-    [IO.File]::WriteAllText($ignoreFile, "*`n", [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($ignoreFile, "*`n", $utf8)
 }
 
-$promptFile = Join-Path $runDir "$stamp-prompt.md"
-$streamFile = Join-Path $runDir "$stamp-events.jsonl"
-$errFile = Join-Path $runDir "$stamp-stderr.log"
-$reportFile = Join-Path $runDir "$stamp-report.md"
-[IO.File]::WriteAllText($promptFile, $prompt, [Text.UTF8Encoding]::new($false))
-[IO.File]::WriteAllText($streamFile, '', [Text.UTF8Encoding]::new($false))
-[IO.File]::WriteAllText($errFile, '', [Text.UTF8Encoding]::new($false))
+$promptFile = Join-Path $runDir "$runName-prompt.md"
+$streamFile = Join-Path $runDir "$runName-events.jsonl"
+$errFile = Join-Path $runDir "$runName-stderr.log"
+$reportFile = Join-Path $runDir "$runName-report.md"
+$patchFile = Join-Path $runDir "$runName-patch.yml"
+$patchYaml = @(
+    '- id: agent-default-model'
+    '  config:'
+    '    provider: deepseek-official'
+    '    model: deepseek-flash'
+    "    reasoningEffort: $reasoningEffort"
+) -join "`n"
+[IO.File]::WriteAllText($promptFile, $prompt, $utf8)
+[IO.File]::WriteAllText($streamFile, '', $utf8)
+[IO.File]::WriteAllText($errFile, '', $utf8)
+[IO.File]::WriteAllText($patchFile, $patchYaml + "`n", $utf8)
 
-$dshArgs = @('headless', '--json')
+$dshArgs = @('headless', '--patch', $patchFile, '--json')
 if ($Session) { $dshArgs += @('--session-id', $Session) }
 $dshArgs += '-'
 
-$utf8 = [Text.UTF8Encoding]::new($false)
+$displayDsh = if ($dshPath -match '\s') { '"' + $dshPath + '"' } else { $dshPath }
+$displayArgs = @($dshArgs | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } })
 
 if ($DryRun) {
+    Write-Output '# resolved configuration'
+    Write-Output 'model: deepseek-official/deepseek-flash'
+    Write-Output "reasoning effort: $reasoningEffort (source: $reasoningEffortSource)"
+    Write-Output "codex review edits: $codexReviewEdits (source: $codexReviewEditsSource)"
+    Write-Output "configuration: $configSource"
+    Write-Output "preflight object limit: $MaxObjects"
+    Write-Output "patch: $patchFile"
+    Write-Output ''
     Write-Output "# dsh command"
-    Write-Output ("{0} {1}" -f $dshPath, ($dshArgs -join ' '))
+    Write-Output ("{0} {1}" -f $displayDsh, ($displayArgs -join ' '))
     Write-Output ''
     Write-Output "# prompt ($promptFile)"
     Write-Output $prompt
@@ -383,7 +597,7 @@ $diagnostics = if ($turnReason) { $turnReason } elseif ($errorText) { $errorText
 $stderrBlock = if ($stderrTail.Count) { ($stderrTail -join "`n") } else { '(empty)' }
 
 $report = @"
-# dsh implementation run $stamp
+# dsh implementation run $runName
 
 | field | value |
 |---|---|
@@ -392,6 +606,11 @@ $report = @"
 | session | $sessionId |
 | design doc | $relativeSpec |
 | permission mode | $Mode |
+| preflight object limit | $MaxObjects |
+| model | deepseek-official/deepseek-flash |
+| reasoning effort | $reasoningEffort (source: $reasoningEffortSource) |
+| Codex review edits | $codexReviewEdits (source: $codexReviewEditsSource) |
+| configuration | $configSource |
 | repo / HEAD before | $repoRoot / $($before.Head) |
 | duration | $($duration.ToString('hh\:mm\:ss')) |
 | tool calls | $($toolCalls.Count) ($($toolFailures.Count) failed) |
@@ -416,12 +635,13 @@ $($finalText.Trim())
 $stderrBlock
 ``````
 
-Artifacts: ``$([IO.Path]::GetFileName($promptFile))``, ``$([IO.Path]::GetFileName($streamFile))``, ``$([IO.Path]::GetFileName($errFile))``
+Artifacts: ``$([IO.Path]::GetFileName($promptFile))``, ``$([IO.Path]::GetFileName($streamFile))``, ``$([IO.Path]::GetFileName($errFile))``, ``$([IO.Path]::GetFileName($patchFile))``
 "@
 [IO.File]::WriteAllText($reportFile, $report, $utf8)
 
 # --------------------------------------------------------------------------- stdout for the caller
 
+Write-Output "config: model deepseek-official/deepseek-flash | reasoningEffort $reasoningEffort ($reasoningEffortSource) | codexReviewEdits $codexReviewEdits ($codexReviewEditsSource) | $configSource"
 Write-Output "dsh: $status | exit $exitCode | $($duration.ToString('hh\:mm\:ss')) | $($toolCalls.Count) tool calls | mode $Mode"
 if ($sessionId) { Write-Output "session: $sessionId" }
 if ($runChanged.Count) { Write-Output "changed by this run: $($runChanged.Count) path(s)" }
