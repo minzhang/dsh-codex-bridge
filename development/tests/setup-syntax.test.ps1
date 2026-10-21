@@ -20,6 +20,8 @@ foreach ($directory in @(
 }
 $impl = Join-Path $bridge 'dsh-impl.ps1'
 if (Test-Path -LiteralPath $impl) { $powerShellFiles.Add($impl) }
+$management = Join-Path $bridge 'dsh-run.ps1'
+if (Test-Path -LiteralPath $management) { $powerShellFiles.Add($management) }
 
 $errors = [Collections.Generic.List[string]]::new()
 foreach ($file in ($powerShellFiles | Sort-Object -Unique)) {

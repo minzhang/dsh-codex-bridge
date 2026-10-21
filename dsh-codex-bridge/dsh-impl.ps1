@@ -84,7 +84,7 @@ param(
     [string]$Mode = 'workspace-write',
     [string]$Repo = '',
     [string]$OutDir = '.dsh-runs',
-    [int]$TimeoutMinutes = 90,
+    [int]$TimeoutMinutes = 180,
     [int]$MaxObjects = 28000,
     [string]$Dsh = '',
     [string]$Config = '',
@@ -100,6 +100,7 @@ $ErrorActionPreference = 'Stop'
 if ($MaxObjects -lt 0) {
     throw '-MaxObjects must be a nonnegative Int32 (0 explicitly disables the count limit).'
 }
+if ($TimeoutMinutes -lt 0) { throw '-TimeoutMinutes must be nonnegative.' }
 
 # --------------------------------------------------------------------------- helpers
 
@@ -174,6 +175,9 @@ function Invoke-ReportHelper {
     $exitCode = 1
     try {
         Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
+        if ($script:runRecord -and $script:runContext) {
+            return Invoke-RunHelper $script:runContext $script:runRecord $NodePath ([string[]]@($HelperPath) + $HelperArguments)
+        }
         $output = @(& $NodePath $HelperPath @HelperArguments 2>&1)
         $exitCode = $LASTEXITCODE
     }
@@ -182,17 +186,6 @@ function Invoke-ReportHelper {
     }
     $text = @($output | ForEach-Object { [string]$_ }) -join "`n"
     return @{ ExitCode = [int]$exitCode; Output = $text }
-}
-
-function Stop-OrphanDsh {
-    param([datetime]$Since, [int[]]$Preexisting)
-
-    $victims = Get-Process -Name 'DeepSeek Harness' -ErrorAction SilentlyContinue |
-        Where-Object { $Preexisting -notcontains $_.Id -and $_.StartTime -ge $Since }
-    foreach ($victim in $victims) {
-        try { Stop-Process -Id $victim.Id -Force -ErrorAction Stop } catch { }
-    }
-    return @($victims).Count
 }
 
 function Convert-ReasoningEffortSetting {
@@ -308,6 +301,19 @@ $reasoningEffortParameter = $ReasoningEffort
 $codexReviewEditsParameter = $CodexReviewEdits
 
 $repoRoot = Resolve-RepoRoot -Hint $Repo
+$runContext = $null
+$runRecord = $null
+$ownedRun = $null
+$runDiagnostic = 'Bridge exited before finalization.'
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$runName = "$stamp-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
+try {
+if (-not $DryRun) {
+    . (Join-Path $PSScriptRoot 'windows/lib/run-lifecycle.ps1')
+    $runContext = New-RunContext -Repo $repoRoot -Create
+    $repoRoot = $runContext.Repo
+    $runRecord = Start-RunRecord $runContext $runName $Spec $Session $TimeoutMinutes
+}
 
 $builtinReasoningEffort = 'max'
 $builtinCodexReviewEdits = 'Not Allow'
@@ -386,24 +392,26 @@ if (-not $DryRun -and $Mode -eq 'workspace-write' -and $isWindowsHost) {
         $setupScript = Join-Path $PSScriptRoot 'windows\setup.ps1'
         if (-not (Test-Path -LiteralPath $setupScript -PathType Leaf)) {
             Write-Output "windows sandbox preflight: package missing at $setupScript"
-            exit 1
+            throw 'Windows preflight script is missing.'
         }
         $pwshExe = Join-Path $PSHOME 'pwsh.exe'
         if (-not (Test-Path -LiteralPath $pwshExe -PathType Leaf)) {
             $pwshCommand = Get-Command pwsh -ErrorAction SilentlyContinue
             if (-not $pwshCommand) {
                 Write-Output 'windows sandbox preflight: pwsh was not found.'
-                exit 1
+                throw 'PowerShell is unavailable for Windows preflight.'
             }
             $pwshExe = $pwshCommand.Source
         }
-        $preflight = @(& $pwshExe -NoProfile -NonInteractive -File $setupScript -Repo $repoRoot -Action Check -MaxObjects $MaxObjects 2>&1)
-        $preflightExit = $LASTEXITCODE
+        $preflightResult = Invoke-RunHelper $runContext $runRecord $pwshExe `
+            ([string[]]@('-NoProfile', '-NonInteractive', '-File', $setupScript, '-Repo', $repoRoot, '-Action', 'Check', '-MaxObjects', "$MaxObjects")) -TimeoutSeconds 600
+        $preflight = @($preflightResult.Output -split '\r?\n')
+        $preflightExit = $preflightResult.ExitCode
         if ($preflightExit -ne 0) {
             Write-Output 'windows sandbox preflight: NOT READY'
             foreach ($line in $preflight) { Write-Output ([string]$line) }
             Write-Output 'Fix the repository permissions with the Repair command above, then re-run the bridge.'
-            exit 1
+            throw 'Windows sandbox preflight failed; execution was not launched.'
         }
         $readyLine = @($preflight | Where-Object { ([string]$_) -match '^RESULT: READY' } | Select-Object -Last 1)
         Write-Output ('windows sandbox preflight: ' + $(if ($readyLine.Count -gt 0) { [string]$readyLine[0] } else { 'READY' }))
@@ -495,9 +503,14 @@ $prompt = $promptTemplate.Replace('<REPO>', $repoRoot).
 # --------------------------------------------------------------------------- prepare outputs
 
 $utf8 = [Text.UTF8Encoding]::new($false)
-$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$runName = "$stamp-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
 $runDir = if ([IO.Path]::IsPathRooted($OutDir)) { $OutDir } else { Join-Path $repoRoot $OutDir }
+if ($runContext) {
+    $runDir = Assert-RunPath $runContext $runDir
+    if ($runDir.TrimEnd('\') -ieq $runContext.Control -or
+        $runDir.StartsWith($runContext.Control + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw '-OutDir cannot use the reserved .dsh-runs/control directory.'
+    }
+}
 New-Item -ItemType Directory -Force -Path $runDir | Out-Null
 # Keep the artifact directory out of the repository's diff without editing the user's .gitignore.
 $ignoreFile = Join-Path $runDir '.gitignore'
@@ -515,6 +528,8 @@ $finalFile = Join-Path $runDir "$runName-final.txt"
 $inventoryBeforeFile = Join-Path $runDir "$runName-inventory-before.json"
 $inventoryAfterFile = Join-Path $runDir "$runName-inventory-after.json"
 $factsFile = Join-Path $runDir "$runName-result-input.json"
+$invocationFile = Join-Path $runDir "$runName-invocation.json"
+$launchFailureFile = Join-Path $runDir "$runName-launch-error.json"
 $patchYaml = @(
     '- id: agent-default-model'
     '  config:'
@@ -541,6 +556,7 @@ if ($DryRun) {
     Write-Output "codex review edits: $codexReviewEdits (source: $codexReviewEditsSource)"
     Write-Output "configuration: $configSource"
     Write-Output "preflight object limit: $MaxObjects"
+    Write-Output "timeout minutes: $TimeoutMinutes"
     Write-Output "patch: $patchFile"
     Write-Output ''
     Write-Output "# dsh command"
@@ -571,82 +587,18 @@ else {
     }
 }
 
-$dshProcessesBefore = @(Get-Process -Name 'DeepSeek Harness' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
 $startedAt = Get-Date
 
-# --------------------------------------------------------------------------- run dsh
-
+# --------------------------------------------------------------------------- durable launch and supervision
 $env:DSH_PERMISSION_MODE = $Mode
-
-# dsh resolves its workspace from the process working directory, so run from the repo root.
 Set-Location -LiteralPath $repoRoot
-
 $timedOut = $false
 $launchFailed = $false
+$interrupted = $false
 $exitCode = $null
-$jobState = 'Unknown'
+$jobState = 'Preparing'
 $captureErrors = @()
-$job = $null
-try {
-    $job = Start-Job -ArgumentList $dshPath, $dshArgs, $promptFile, $streamFile, $errFile, $repoRoot -ScriptBlock {
-        param($DshPath, $DshArgs, $PromptFile, $StreamFile, $ErrorFile, $RepoRoot)
-
-        $ErrorActionPreference = 'Continue'
-        Set-Location -LiteralPath $RepoRoot
-        $OutputEncoding = [Text.UTF8Encoding]::new($false)
-        $utf8 = [Text.UTF8Encoding]::new($false)
-
-        $prompt = [IO.File]::ReadAllText($PromptFile, $utf8)
-        $prompt | & $DshPath @DshArgs 2> $ErrorFile | Set-Content -LiteralPath $StreamFile -Encoding utf8
-        return $LASTEXITCODE
-    }
-}
-catch {
-    $launchFailed = $true
-    $jobState = 'Failed'
-    $captureErrors += "could not start dsh process: $($_.Exception.Message)"
-}
-
-if ($job) {
-    if (-not (Wait-Job -Job $job -Timeout ($TimeoutMinutes * 60))) {
-        $timedOut = $true
-        Stop-Job -Job $job
-        [void](Stop-OrphanDsh -Since $startedAt -Preexisting $dshProcessesBefore)
-        $jobState = [string]$job.State
-        $exitCode = $null
-    }
-    else {
-        $received = @(Receive-Job -Job $job -ErrorAction SilentlyContinue)
-        $jobState = [string]$job.State
-        foreach ($jobError in @($job.ChildJobs | ForEach-Object { $_.Error } | ForEach-Object { [string]$_ } | Where-Object { $_ })) {
-            $captureErrors += $jobError
-        }
-        $receivedValues = @($received | Where-Object { $null -ne $_ })
-        if ($receivedValues.Count -gt 0) {
-            $exitCode = [int]($receivedValues | Select-Object -Last 1)
-        }
-        if ($null -eq $exitCode -or $jobState -eq 'Failed') {
-            $launchFailed = $true
-        }
-    }
-    Remove-Job -Job $job -Force | Out-Null
-}
-$completedAt = Get-Date
-
-# --------------------------------------------------------------------------- observe after
-
-$afterInventoryArguments = @('inventory', '--root', $repoRoot, '--out', $inventoryAfterFile)
-if (Test-Path -LiteralPath $inventoryBeforeFile -PathType Leaf) {
-    $afterInventoryArguments += @('--include', $inventoryBeforeFile)
-}
-$afterInventoryResult = Invoke-ReportHelper -NodePath $reportRuntime.Node -HelperPath $reportRuntime.Helper `
-    -HelperArguments $afterInventoryArguments
-if ($afterInventoryResult.ExitCode -ne 0) {
-    $inventoryErrors += "after inventory failed: $($afterInventoryResult.Output.Trim())"
-}
-
-# --------------------------------------------------------------------------- canonical result
-
+$completedAt = $startedAt
 $settings = [ordered]@{
     mode = $Mode
     model = 'deepseek-official/deepseek-flash'
@@ -686,14 +638,117 @@ $facts = [ordered]@{
         inventoryAfter = $inventoryAfterFile
     }
 }
+Write-RunJson $runContext $factsFile $facts
+$runRecord.artifacts = $facts.artifacts
+$runRecord.factsPath = $factsFile
+Save-RunRecord $runContext $runRecord
+Write-RunJson $runContext $invocationFile @{ executable = $dshPath; arguments = $dshArgs; cwd = $repoRoot; failureFile = $launchFailureFile }
 try {
-    [IO.File]::WriteAllText($factsFile, ($facts | ConvertTo-Json -Depth 20), $utf8)
+    $pwshExecutable = Join-Path $PSHOME 'pwsh.exe'
+    $childScript = Join-Path $PSScriptRoot 'windows/lib/run-child.ps1'
+    $childArguments = [string[]]@('-NoProfile', '-NonInteractive', '-File', $childScript, '-Invocation', $invocationFile)
+    $ownedRun = [DshBridge.OwnedRun]::new($runRecord.jobName, $pwshExecutable, $childArguments, $repoRoot, $promptFile, $streamFile, $errFile)
+    $runRecord.child = @{ pid = $ownedRun.Pid; createdUtc = $ownedRun.CreatedUtc }
+    $runRecord.stage = 'RUNNING'
+    $runRecord.launched = $true
+    Save-RunRecord $runContext $runRecord
+    if ($runRecord.stop) { throw 'Execution stopped explicitly before the contained child resumed.' }
+    $ownedRun.Resume()
+    $jobState = 'Running'
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    $lastHeartbeat = -5000
+    while (-not $ownedRun.Exited) {
+        if ($clock.Elapsed.TotalMinutes -ge $TimeoutMinutes) {
+            $timedOut = $true
+            $ownedRun.Terminate()
+            break
+        }
+        if ($clock.ElapsedMilliseconds - $lastHeartbeat -ge 2000) {
+            $runRecord.heartbeatAt = Get-RunUtc
+            $latestWrite = @($streamFile, $errFile) | ForEach-Object { (Get-Item -LiteralPath $_).LastWriteTimeUtc } | Sort-Object -Descending | Select-Object -First 1
+            $runRecord.lastActivityAt = $latestWrite.ToString('o')
+            if (-not $runRecord.observedSession) {
+                try {
+                    $firstEvent = Get-Content -LiteralPath $streamFile -TotalCount 1 | ConvertFrom-Json -ErrorAction Stop
+                    if ($firstEvent.type -eq 'session' -and $firstEvent.sessionId) { $runRecord.observedSession = [string]$firstEvent.sessionId }
+                } catch { }
+            }
+            Save-RunRecord $runContext $runRecord
+            if ($runRecord.stop) {
+                $interrupted = $true
+                $captureErrors += 'Execution stopped explicitly; remaining task work is unknown.'
+                $ownedRun.Terminate()
+                break
+            }
+            if ($Session -and $runRecord.observedSession -and $Session -cne $runRecord.observedSession) {
+                $interrupted = $true
+                $captureErrors += 'Observed session differs from requested session; continuation was not confirmed.'
+                $ownedRun.Terminate()
+                break
+            }
+            $lastHeartbeat = $clock.ElapsedMilliseconds
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    # The primary launcher ending must not leave a background writer behind.
+    if ($ownedRun.ActiveCount -gt 0) { $ownedRun.Terminate() }
+    $drain = [Diagnostics.Stopwatch]::StartNew()
+    while ($ownedRun.ActiveCount -gt 0 -and $drain.ElapsedMilliseconds -lt 10000) { Start-Sleep -Milliseconds 50 }
+    if ($ownedRun.ActiveCount -ne 0) { throw 'Owned process termination could not be confirmed.' }
+    if (-not $timedOut -and -not $interrupted) { $exitCode = $ownedRun.ExitCode }
+    $jobState = 'Completed'
+    if ([IO.File]::Exists($launchFailureFile)) {
+        $failure = Read-RunJson $runContext $launchFailureFile
+        $launchFailed = $true
+        $exitCode = $null
+        $captureErrors += [string]$failure.error
+    }
+} catch {
+    $launchFailed = -not $runRecord.launched
+    $interrupted = [bool]$runRecord.launched
+    $jobState = 'Failed'
+    $captureErrors += $_.Exception.Message
+    if ($ownedRun) { try { $ownedRun.Terminate() } catch { $captureErrors += $_.Exception.Message } }
+} finally {
+    if ($ownedRun) { $ownedRun.Dispose(); $ownedRun = $null }
 }
-catch {
-    Write-Output "result-error: could not write reporting input: $($_.Exception.Message)"
-    Write-Output "artifacts: prompt $promptFile | patch $patchFile | events $streamFile | stderr $errFile"
-    exit 1
+$completedAt = Get-Date
+$latestRunRecord = Read-RunRecord $runContext $runName
+$runRecord.stop = $latestRunRecord.stop
+if ($runRecord.stop) {
+    $runRecord.stopHandled = $true
+    $interrupted = $true
+    $exitCode = $null
+    $captureErrors += 'Execution stopped explicitly; original exit status and unreported work are unknown.'
+    Save-RunRecord $runContext $runRecord
 }
+
+# --------------------------------------------------------------------------- observe after
+
+$afterInventoryArguments = @('inventory', '--root', $repoRoot, '--out', $inventoryAfterFile)
+if (Test-Path -LiteralPath $inventoryBeforeFile -PathType Leaf) {
+    $afterInventoryArguments += @('--include', $inventoryBeforeFile)
+}
+$afterInventoryResult = Invoke-ReportHelper -NodePath $reportRuntime.Node -HelperPath $reportRuntime.Helper `
+    -HelperArguments $afterInventoryArguments
+if ($afterInventoryResult.ExitCode -ne 0) {
+    $inventoryErrors += "after inventory failed: $($afterInventoryResult.Output.Trim())"
+}
+
+# --------------------------------------------------------------------------- canonical result
+
+$facts.completedAt = $completedAt.ToUniversalTime().ToString('o')
+$facts.exitCode = $exitCode
+$facts.timedOut = $timedOut
+$facts.launchFailed = $launchFailed
+$facts.interrupted = $interrupted
+$facts.jobState = $jobState
+$facts.captureErrors = @($captureErrors)
+$facts.inventoryErrors = @($inventoryErrors)
+$runRecord.stage = 'FINALIZING'
+$runRecord.exitKnown = $true
+Write-RunJson $runContext $factsFile $facts
+Save-RunRecord $runContext $runRecord
 
 $finalize = Invoke-ReportHelper -NodePath $reportRuntime.Node -HelperPath $reportRuntime.Helper `
     -HelperArguments @('finalize', '--input', $factsFile)
@@ -721,6 +776,14 @@ catch {
 
 # --------------------------------------------------------------------------- stdout for the caller
 
+$finishedResult = Read-RunJson $runContext $resultFile
+$runRecord.finalized = $true
+$runRecord.outcome = if ($finishedResult.execution.bridgeExitCode -ne 0 -and $finishedResult.execution.status -eq 'SUCCEEDED') { 'FAILED' } else { $finishedResult.execution.status }
+if ($finishedResult.sessionProvenance -eq 'EVENT') {
+    $runRecord.observedSession = $finishedResult.sessionId
+}
+Save-RunRecord $runContext $runRecord
+
 Write-Output "repo-root: $repoRoot"
 foreach ($summaryLine in @($finalizePayload.summaryLines)) {
     Write-Output ([string]$summaryLine)
@@ -740,6 +803,19 @@ else {
     Write-Output '(no final message captured; see the result and stderr artifacts)'
 }
 
-try { Remove-Item -LiteralPath $factsFile -Force -ErrorAction SilentlyContinue } catch { }
+$runDiagnostic = 'Canonical result finalized; independent acceptance is pending.'
 
 exit ([int]$finalizePayload.bridgeExitCode)
+
+} catch {
+    $runDiagnostic = $_.Exception.Message
+    [Console]::Error.WriteLine($runDiagnostic)
+    if ($runRecord) { Write-Output "lifecycle-run: $($runRecord.runId); inspect with dsh-run.ps1 -Action Status" }
+    exit 1
+} finally {
+    if ($ownedRun) { $ownedRun.Dispose() }
+    if ($runRecord) {
+        try { Finish-RunRecord $runContext $runRecord $runDiagnostic }
+        catch { [Console]::Error.WriteLine("Execution ownership retained: $($_.Exception.Message)") }
+    }
+}

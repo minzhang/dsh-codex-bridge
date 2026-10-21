@@ -68,7 +68,7 @@ const TOOL = {
       },
       timeout_minutes: {
         type: 'number',
-        description: 'Hard wall-clock limit for the run. Default 90.',
+        description: 'Hard wall-clock limit for the run. Default 180 minutes (3 hours).',
       },
       config: {
         type: 'string',

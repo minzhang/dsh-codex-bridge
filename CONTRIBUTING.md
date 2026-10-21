@@ -24,8 +24,9 @@ there is no build or packaging step for bridge users.
 ## Changes and review
 
 Open a focused issue or pull request describing the problem, final behavior and checks actually
-run. For Codex/DSH work, follow [AGENTS.md](AGENTS.md): Codex writes the design; DSH implements,
-tests and reworks; Codex reviews and reruns acceptance checks. Keep failures and platform limits
+run. Follow [AGENTS.md](AGENTS.md): this repository's design, implementation, fixes, tests and
+publication are handled directly by Codex using the user's selected model. Do not delegate
+its development to DSH. Keep failures and platform limits
 visible. Never weaken assertions or disable confinement to make a run pass.
 
 When adding a delivery file, keep it self-contained and verify it from a copied folder.

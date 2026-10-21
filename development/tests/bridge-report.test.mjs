@@ -4,6 +4,7 @@ import {
   chmodSync,
   closeSync,
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -110,6 +111,7 @@ function copyBridgePackage(name) {
   copyFileSync(helperSource, join(packageDirectory, 'node', 'run-report.mjs'));
   copyFileSync(configSource, join(packageDirectory, 'bridge.config.json'));
   copyFileSync(mcpSource, join(packageDirectory, 'mcp', 'dsh-mcp-server.mjs'));
+  cpSync(join(repoRoot, 'dsh-codex-bridge', 'windows', 'lib'), join(packageDirectory, 'windows', 'lib'), { recursive: true });
   const fakeDir = join(directory, 'fake-dsh');
   mkdirSync(fakeDir, { recursive: true });
   const fakeScript = join(fakeDir, 'fake-dsh.cjs');

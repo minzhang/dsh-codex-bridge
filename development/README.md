@@ -30,14 +30,15 @@ npm run test:demo
 node demos/pascal-desk/node_modules/typescript/bin/tsc --noEmit --strict --module NodeNext --moduleResolution NodeNext --target ES2022 --types node --typeRoots demos/pascal-desk/node_modules/@types development/tests/types-consumer.mts
 ```
 
-DSH's affected Windows backend blocks Node worker pipes. Run the same suites inside DSH with:
+DSH's affected Windows backend blocks Node worker pipes. Codex also verifies the same
+no-worker suites directly; maintaining this repository does not launch a DSH agent:
 
 ```powershell
 npm run test:sandbox
 npm run test:demo:sandbox
 ```
 
-These retain every assertion and actual CLI subprocess. Codex separately runs the ordinary
+These retain every assertion and actual CLI subprocess. Codex also runs the ordinary
 worker-isolated suites. Passing the lightweight setup probe alone does not establish acceptance.
 
 `bridge-config.test.mjs` runs the bridge and MCP server through real PowerShell/Node children
@@ -49,6 +50,9 @@ acceptance manifest coverage, check-log availability and traversal/link refusal,
 working-tree observations (dirty-again, unchanged dirty, new, deleted, renamed, restored and
 staged-only paths), non-Git fallback, and MCP text/`structuredContent` with safe artifact
 reading. It also uses disposable fixtures only.
+`bridge-lifecycle.test.mjs` uses copied delivery folders and controlled real child processes
+to cover ownership, heartbeat, timeout, interruption, explicit stop/recovery and evidence
+preservation. These fixtures do not invoke a DSH model.
 `setup-object-count.test.ps1` creates a unique disposable fixture and exercises real tree
 enumeration and restore-manifest loading at exactly 28,000 objects, at 28,001 with default-cap
 rejection, and at 28,001 with a 50,000 explicit cap, plus explicit zero/unlimited, small finite
@@ -97,6 +101,10 @@ new repository or restore it against another tree.
   declared check coverage, working-tree observations and report validation.
 - [Runtime token usage](design/007-run-token-usage.md): per-run execution metadata,
   cache accounting and affected-component verification.
+- [Deferred worktree discussion](design/008-worktree-workflow-deferred.md): archived proposal;
+  no worktree functionality is currently being implemented.
+- [Execution lifecycle and recovery](design/009-run-lifecycle-recovery.md): repository ownership,
+  observed run state, bounded termination and explicit interruption recovery.
 - Earlier bridge designs in `design/001-*` and `design/002-*` record the original implementation.
 - `history/` contains sanitized historical reports. Paths/test counts there describe the layout
   and product stage at the time; follow current READMEs for commands.

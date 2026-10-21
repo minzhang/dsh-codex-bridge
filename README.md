@@ -133,6 +133,10 @@ debugger. Press **F1** for help and **Ctrl+Q** to quit.
 
 ## Develop and verify locally
 
+This repository is maintained directly by Codex using the user's selected model, including
+implementation and fixes. Its own development is not delegated to DSH; the delivered
+Codex/DSH workflow is intended for projects adopting the bridge.
+
 These commands are for maintainers working on the bridge and demo:
 
 ```powershell

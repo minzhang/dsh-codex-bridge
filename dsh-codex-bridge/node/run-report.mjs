@@ -1841,6 +1841,7 @@ export function parseImplementerReport(finalText, { repoRoot, manifest }) {
 
 function executionStatusFor(facts) {
   if (facts.timedOut) return 'TIMEOUT';
+  if (facts.interrupted) return 'FAILED';
   if (facts.launchFailed || facts.exitCode === null || facts.exitCode === undefined) {
     return 'LAUNCH_FAILED';
   }
@@ -1850,6 +1851,7 @@ function executionStatusFor(facts) {
 
 function bridgeExitFor(facts, executionStatus, validity) {
   if (executionStatus === 'TIMEOUT') return 124;
+  if (facts.interrupted) return 1;
   if (executionStatus === 'LAUNCH_FAILED') return 1;
   if (typeof facts.exitCode === 'number' && facts.exitCode !== 0) return facts.exitCode;
   return validity === 'VALID' ? 0 : 65;
@@ -1879,6 +1881,10 @@ function buildResult(facts) {
   const durationMs = roundDuration(completedAt - startedAt);
   const events = parseEventStream(facts.artifacts.events, facts.requestedSession || '');
   const suppliedCaptureErrors = asStringArray(facts.captureErrors);
+  if (facts.requestedSession && events.sessionProvenance === 'EVENT' &&
+      events.sessionId !== facts.requestedSession) {
+    suppliedCaptureErrors.push('Observed session differs from requested session; continuation was not confirmed.');
+  }
   const report = parseImplementerReport(events.finalText, {
     repoRoot,
     manifest: facts.manifest,

@@ -70,6 +70,11 @@ choice and a brief reason in the existing design or delegation notes, for exampl
 
 ## Delegate, review, and rework
 
+The default execution timeout is 180 minutes; increase `-TimeoutMinutes` for longer work.
+After an interruption or an occupied-repository error, use `dsh-run.ps1 -Action Scan`.
+See [execution status and recovery](docs/run-recovery.md) for inspection and explicit Stop/Recover.
+Recovery preserves evidence and never starts another session automatically.
+
 1. Define a reviewable phase in the project's design directory using
    [docs/design/TEMPLATE.md](docs/design/TEMPLATE.md). Specify scope, interfaces, permitted files,
    constraints, and the project's actual build/test commands. Resolve material product decisions

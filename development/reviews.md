@@ -360,3 +360,73 @@ same-task rework and a task that warrants a new session; each can express its ch
 reason using the existing interface. This is documentation validation, not a fresh live
 session test. Runtime code and tests are unchanged; no full bridge, Windows or demo suite
 was run, consistent with the user's affected-checks-only request.
+
+## Execution ownership and interruption recovery — 2026-10-21
+
+**Accepted.** [Design 008](design/008-worktree-workflow-deferred.md) archives the deferred
+worktree discussion; no worktree functionality was added. [Design 009](design/009-run-lifecycle-recovery.md)
+implements lifecycle management for the current local delegation path. The default execution
+timeout increases from 90 to 180 minutes and remains overridable.
+
+The user clarified that this repository must be maintained directly by their selected Codex
+model. Codex stopped the initial DSH delegation before any production edits, retained its local
+evidence, and performed implementation, review and verification directly thereafter. Root
+maintenance instructions now distinguish this policy from the delivered downstream Codex/DSH
+workflow. No additional DSH model run, credentials change, dependency, CI or packaging was used.
+
+Each invocation now acquires repository-wide ownership independently of output directory and
+session, and atomically records preparation, execution, finalization and completion. Windows
+jobs contain the child at process creation, covering ordinary descendants and preparation/report
+helpers. PID plus creation time is used for observation; stale heartbeat alone never proves
+death. The former process-name/time-wide cleanup was removed. Normal preflight and DSH
+workspace-write configuration remain unchanged.
+
+The new `dsh-run.ps1` provides read-only Status/Scan and explicit Stop/Recover with a run ID
+and reason. Recovery refuses live or uncertain writers, preserves code and raw evidence,
+reconstructs missing results where facts permit, preserves existing results, and cannot release
+a newer owner's record. Unknown interrupted execution becomes FAILED with null original exit,
+bridge exit 1 and pending acceptance; usage remains incomplete when capture is incomplete.
+Session events distinguish actual observation from requested fallback. Recovery never relaunches
+DSH, chooses a session, resets Git or introduces a handoff-document requirement.
+
+Review and failure-driven corrections:
+
+- The initial eight lifecycle scenarios passed, but cleanup exposed a surviving report helper.
+  Report/inventory/manifest and preflight helpers now use owned jobs too. The maintained regression
+  kills a bridge during finalization and verifies the actual helper PID exits.
+- A legacy configuration fixture returned a fixed session ID despite requesting another session.
+  The new consistency check correctly rejected it. The fake launcher now echoes the supplied ID;
+  all existing forwarding assertions remain intact, with a separate mismatch-rejection regression.
+- Recovery interrupted after saving RECOVERED but before removing its active pointer can now
+  finish that same release on retry, preserving recovery/result bytes. A later owner remains protected.
+- Custom output cannot enter the reserved control tree. Junction escapes and hard-linked ownership
+  are refused without altering external sentinels.
+
+| Check | Actual result |
+|---|---|
+| Ordinary bridge suite, `npm test` | 80 tests executed: 79 passed initially; the one fixture session mismatch above failed. After correcting only the fake response, its unchanged forwarding assertions passed in a focused rerun. |
+| Complete no-worker bridge suite, `npm run test:sandbox` | 80 passed, zero failed/skipped. Run directly by Codex. |
+| New lifecycle coverage | 11 maintained scenarios passed in both modes: real child trees, concurrent ownership, heartbeat, resume/mismatch/failure, timeout, stop, interruption, recovery, PID reuse/uncertainty, malformed state and path boundaries. |
+| Final focused corrections | Recovery/reuse cases: 2 passed in each mode. Reserved-directory/link case: 1 passed in each mode. Existing full-suite results retained for unaffected behavior. |
+| Windows suite, `npm run test:windows` | Passed syntax, path/state/link boundaries, 28,000/28,001-object limits and ACL regressions. |
+| Real installed Windows sandbox under the new job | Existing copied-folder repair/confinement/repeat-repair/alias-refusal/exact-rollback checks passed for both ordinary and temporary-WRITE_OWNER fixtures, with no live descendants. No model session involved. |
+| Demo typecheck and ordinary tests | `npm --prefix demos/pascal-desk run check` passed; `npm run test:demo` built and passed 148 tests, zero failed/skipped. |
+| Demo no-worker tests | `npm run test:demo:sandbox` built and passed 148 tests, zero failed/skipped. |
+| Type consumer | Strict NodeNext declaration-consumer check passed. |
+| Delivery and skill | Both direct-folder and installed-skill copies remained self-contained and passed DryRun; skill validator passed; 47 local links/anchors resolved. |
+| Source and manifests | Ordinary/no-worker lists contain the same seven files; no assertions removed; final syntax/whitespace checks passed; no dependency changes. |
+
+The complete checks follow the current repository instructions; the earlier affected-only
+exception was recorded for design 007. After the full runs, only checks affected by the final
+two corrections were repeated. Detailed logs and final source hashes remain ignored under
+`.dsh-runs/lifecycle-*`. Native containment probe source is
+`.dsh-runs/lifecycle-contained-setup.ps1`; actual ACL recovery evidence stays in its original
+unique host-temp directories, indexed by `development/.state/lifecycle-*.json`. These local
+files, raw transcripts, personal paths, credentials and build products are not published.
+
+Verification covers the current Windows host and installed sandbox backend. Managed execution
+now explicitly requires Windows; Linux/macOS, other project types, worktrees and a fresh
+live-model run are not claimed as verified. Windows containment covers ordinary descendant
+processes; external-service-launched processes are outside that guarantee. Read-only scanning
+covers this version's control records, not historical runs without them. No automatic restart,
+background monitoring or bidirectional messaging was added.

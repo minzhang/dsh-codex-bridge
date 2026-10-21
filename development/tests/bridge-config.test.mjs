@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import {
   closeSync,
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -56,6 +57,7 @@ function copyBridgeScript(directory) {
   const helper = join(directory, 'node', 'run-report.mjs');
   mkdirSync(dirname(helper), { recursive: true });
   copyFileSync(reportHelper, helper);
+  cpSync(join(repoRoot, 'dsh-codex-bridge', 'windows', 'lib'), join(directory, 'windows', 'lib'), { recursive: true });
   return script;
 }
 
@@ -145,7 +147,9 @@ function makeFakeDsh() {
       '  permissionMode: process.env.DSH_PERMISSION_MODE,',
       '  stdin,',
       '}, null, 2));',
-      "process.stdout.write(JSON.stringify({ type: 'session', sessionId: 'session-fake' }) + '\\n');",
+      "const sessionIndex = process.argv.indexOf('--session-id');",
+      "const sessionId = sessionIndex >= 0 ? process.argv[sessionIndex + 1] : 'session-fake';",
+      "process.stdout.write(JSON.stringify({ type: 'session', sessionId }) + '\\n');",
       "const report = { schemaVersion: 1, status: 'DONE', summary: 'FAKE DSH COMPLETE', changes: [], checks: [], decisions: [], followUps: [] };",
       "process.stdout.write(JSON.stringify({ type: 'final', text: JSON.stringify(report) }) + '\\n');",
       'process.exit(0);',

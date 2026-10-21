@@ -62,6 +62,13 @@ Work in this repository is split between two agents. Do not blur the roles.
 4. The design agent reviews `git diff` plus the run result/report in `.dsh-runs/`, reruns the
    acceptance checks itself, and then either merges or delegates a corrective round.
 
+## Execution status and recovery
+
+For long-running or interrupted execution, use [status and recovery](docs/run-recovery.md).
+The default timeout is 180 minutes and can be increased per run. Inspect Status/Scan before
+deciding to Stop or Recover; preserve ownership and raw evidence instead of deleting a lock
+to force another launch. Recovery never starts a new session automatically.
+
 ## Codex review edits policy
 
 Before making any post-review edit, consult the effective `codexReviewEdits` value: read
@@ -110,6 +117,6 @@ accepted.
 
 ## Notes
 
-- `.dsh-runs/` holds per-run artifacts (prompt, patch, event stream, result, raw final text,
-  report, inventories). Treat it as local scratch space, not as a source of truth.
+- `.dsh-runs/` holds local per-run artifacts and execution ownership/recovery records.
+  Preserve unresolved evidence. Task acceptance still requires inspecting the diff and tests.
 - One design document should be one reviewable change set, roughly 30–90 minutes of work.

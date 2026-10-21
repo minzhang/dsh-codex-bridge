@@ -171,6 +171,12 @@ raw implementer message.
 
 ### Run result contract
 
+Execution ownership and interruption diagnostics live separately in `.dsh-runs/control/`.
+One managed run may write to a repository at a time. Use `dsh-run.ps1 -Action Status` or
+`-Action Scan` to inspect it, and explicit Stop/Recover when needed. See
+[execution status and recovery](docs/run-recovery.md) for commands, states and limitations.
+The default DSH execution timeout is 180 minutes; longer tasks can override it.
+
 `<run>-result.json` is the canonical machine-readable result (`schemaVersion: 1`). It keeps
 four dimensions separate:
 
@@ -442,7 +448,7 @@ snapshots are published.
 | `-Task` | empty | Additional instructions or reviewer feedback |
 | `-Session` | new session | Continue an earlier session in the same repository |
 | `-Mode` | `workspace-write` | DSH permission mode |
-| `-TimeoutMinutes` | `90` | Run wall-clock limit |
+| `-TimeoutMinutes` | `180` | DSH execution wall-clock limit in minutes; zero times out immediately |
 | `-MaxObjects` | `28000` | Windows preflight object cap; `0` disables it, any positive Int32 such as `50000` may be used |
 | `-OutDir` | `.dsh-runs` | Run artifacts |
 | `-Dsh` | PATH / desktop fallback | Explicit DSH launcher |
@@ -514,6 +520,7 @@ changes DSH's role or grants DSH commit/publication permission.
 | Path | Purpose |
 |---|---|
 | `dsh-impl.ps1` | Design → DSH run → review report |
+| `dsh-run.ps1` | Read-only status/scan and explicit owned-run stop/recovery |
 | `bridge.config.json` | Shipped reasoning effort and Codex post-review edit policy |
 | `SKILL.md` | Optional Codex skill entry point for setup, delegation and review |
 | `agents/openai.yaml` | Codex skill display metadata |
