@@ -2,7 +2,7 @@
   "name": "dsh-codex-bridge-workspace",
   "version": "0.1.0",
   "private": true,
-  "description": "Maintainer workspace for the copyable DeepSeek Harness Codex bridge and its demo",
+  "description": "Maintainer workspace for the DeepSeek Harness Codex skill and its demo",
   "license": "MIT",
   "type": "module",
   "engines": {

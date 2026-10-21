@@ -16,7 +16,7 @@ Windows preflight allows ten minutes; inventory and report helpers allow two min
 
 ## Inspect without starting DSH
 
-Run from the target project, using its local bridge:
+After the installed skill prepares the project runtime, Codex runs from the target project:
 
 ```powershell
 pwsh -NoProfile -File dsh-codex-bridge/dsh-run.ps1 -Repo . -Action Status

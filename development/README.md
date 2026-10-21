@@ -1,6 +1,6 @@
 # Bridge development and verification
 
-`../dsh-codex-bridge/` is the canonical runtime implementation and self-contained delivery.
+`../dsh-codex-bridge/` is the installable Codex skill and canonical runtime implementation.
 This directory holds its maintainer tests and development records. Do not
 create a second runtime copy here. `../demos/pascal-desk/` is the first end-to-end verification
 project; future project types belong in separate `demos/` directories.
@@ -50,7 +50,7 @@ acceptance manifest coverage, check-log availability and traversal/link refusal,
 working-tree observations (dirty-again, unchanged dirty, new, deleted, renamed, restored and
 staged-only paths), non-Git fallback, and MCP text/`structuredContent` with safe artifact
 reading. It also uses disposable fixtures only.
-`bridge-lifecycle.test.mjs` uses copied delivery folders and controlled real child processes
+`bridge-lifecycle.test.mjs` uses isolated project runtimes and controlled real child processes
 to cover ownership, heartbeat, timeout, interruption, explicit stop/recovery and evidence
 preservation. These fixtures do not invoke a DSH model.
 `setup-object-count.test.ps1` creates a unique disposable fixture and exercises real tree
@@ -65,28 +65,29 @@ pwsh -NoProfile -File development/tests/reviewer-lifecycle.ps1
 pwsh -NoProfile -File development/tests/reviewer-lifecycle.ps1 -RequireTemporaryWriteOwner
 ```
 
-These create fresh copied-folder Git fixtures with spaces in their paths under a unique host-temp
+These create fresh Git fixtures with project runtimes and spaces in their paths under a unique host-temp
 directory, exercise repair and real confinement, check repeat repair and unsafe aliases,
 and verify exact restoration. Full recovery evidence stays in that temp fixture; an index under
 `development/.state/` points to it. Keeping restored fixture trees outside the project prevents
 their deliberately Medium integrity labels from blocking later preflight. They never repair the containing
 repository. The temporary-WRITE_OWNER case prepares its own outer temporary container with an
-inheritable Modify grant so the copied repository lacks that permission. The test retains the
+inheritable Modify grant so the fixture repository lacks that permission. The test retains the
 assertion that WRITE_OWNER is absent before repair, and fails if preparation cannot establish it.
 
 All checks are run manually. Actual DSH lifecycle checks need a configured Windows host.
 
-## Delivery
+## Skill installation and project preparation
 
-Copy `dsh-codex-bridge/` directly from a clean checkout into the target project's root. It contains
-its own MIT license and operational setup probes. No build, export or packaging step is required.
-When copying from a used workspace, omit the locally generated `.state/` directory.
+Users install the skill from GitHub and invoke `$dsh-codex-bridge` as described in the
+[root README](../README.md). Keep `SKILL.md` and `agents/openai.yaml` connected to one canonical
+runtime. No build, export or packaging step is required.
 
-The same folder also contains `SKILL.md` and `agents/openai.yaml` for optional GitHub skill
-installation. Keep this entry point linked to the existing documentation and runtime; do not
-maintain a second bridge implementation. Check skill frontmatter and local references when editing
-it, and verify both direct-folder use and copying from an installed skill into a target project.
-Setup must run from the project-local copy, preserving any existing bridge and recovery data.
+Check skill frontmatter and local references when editing it. Verify preparation from an
+installed-skill layout into a target project, including complete runtime files and exclusion of
+generated `.state/` evidence. Codex reuses an existing complete project runtime and preserves
+project files and recovery data. Setup runs there, never against the shared skill installation.
+Disposable fixture copies in shared runtime tests remain necessary to verify isolation and
+permission rollback; they are not a user installation interface.
 
 Tests use disposable fixtures. Real setup evidence and publication logs stay ignored in `.state/`
 and `.dsh-runs/`. Keep permission backups where they were created; never distribute a backup to a
@@ -105,6 +106,8 @@ new repository or restore it against another tree.
   no worktree functionality is currently being implemented.
 - [Execution lifecycle and recovery](design/009-run-lifecycle-recovery.md): repository ownership,
   observed run state, bounded termination and explicit interruption recovery.
+- [Skill-only usage](design/010-skill-only-usage.md): the current installation and onboarding
+  contract, superseding older distribution directions.
 - Earlier bridge designs in `design/001-*` and `design/002-*` record the original implementation.
 - `history/` contains sanitized historical reports. Paths/test counts there describe the layout
   and product stage at the time; follow current READMEs for commands.
@@ -112,7 +115,7 @@ new repository or restore it against another tree.
 
 ## Future validation
 
-Linux and macOS need their own DSH backend setup, copied-kit delegation and full-suite evidence.
+Linux and macOS need their own DSH backend setup, skill integration and full-suite evidence.
 Web, backend and native UI projects need representative demos and end-to-end review/rework runs.
 Until those checks exist, keep them marked unverified. New platform work must preserve Windows
 confinement, rollback and current test coverage.

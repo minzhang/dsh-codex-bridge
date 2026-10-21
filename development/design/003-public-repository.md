@@ -1,11 +1,12 @@
 # 003 — Public repository organization
 
-Status: accepted final scope, 2026-10-19. This document incorporates the owner's clarification
-that delivery is a direct folder copy. It supersedes the earlier CI and export proposal.
+Status: repository organization accepted on 2026-10-19. The earlier distribution directions
+are superseded by [design 010](010-skill-only-usage.md): install and invoke the Codex skill.
+Implementation and verification records below describe the original work.
 
 ## Goal and scope
 
-Make the copyable bridge the primary product, with maintainer assets and demo projects separate.
+Keep the bridge runtime separate from maintainer assets and demo projects.
 Preserve accepted behavior. No new platform support or Pascal Desk features.
 
 - `dsh-codex-bridge/`: self-contained operational delivery, including instructions, setup probes
@@ -13,8 +14,8 @@ Preserve accepted behavior. No new platform support or Pascal Desk features.
 - `development/`: bridge tests, designs and sanitized acceptance history.
 - `demos/pascal-desk/`: accepted editor source and all 148 tests.
 
-Users copy the delivery folder into their project's root. There is no build, package, export,
-release artifact or CI requirement. Local `.state/` recovery evidence must not be distributed.
+Current usage is through the installed skill. There is no build, package, export, release
+artifact or CI requirement. Local `.state/` recovery evidence must not be distributed.
 
 ## Ownership
 

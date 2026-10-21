@@ -26,7 +26,8 @@ Everyone broad access, add unrestricted token groups, or change DSH to danger-fu
 ## Prerequisites and scope
 
 - Run PowerShell 7 as the ordinary repository owner. Administrator/UAC elevation is not required.
-- Keep this package inside the dedicated project repository being prepared.
+- Use the project-local runtime prepared by the installed `$dsh-codex-bridge` skill.
+  Keep it inside the dedicated repository; never repair the shared skill installation.
 - Stop agents/build processes that could alter the tree during permission repair or restoration.
 - Run setup from the **host**, not from a DSH confined child. That child deliberately cannot
   rewrite Windows permissions. Codex may need approved host execution under its own tool policy;
@@ -50,7 +51,7 @@ non-label audit information must remain intact.
 
 ## First-run commands
 
-From the repository root:
+After skill preparation, Codex runs these commands from the target repository root:
 
 ```powershell
 pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Check
@@ -113,8 +114,8 @@ Do not replace a failing project test with the smoke test.
 ## Evidence and recovery
 
 Setup artifacts live under this package's ignored `.state/`. Preserve the reported backup and
-logs at the original repository. Do not distribute them as part of a fresh package copy; they
-contain machine-specific paths and descriptors and apply only to their original tree.
+logs at the original repository. Exclude them from skill installation and preparation for another
+project; they contain machine-specific paths and descriptors and apply only to their original tree.
 
 For an intentional rollback, stop active DSH/build processes, use the exact backup printed by the
 repair, and run:

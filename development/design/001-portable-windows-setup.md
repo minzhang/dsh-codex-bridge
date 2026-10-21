@@ -3,6 +3,7 @@
 > Historical record: paths and test totals below describe the original development layout.
 > Use the current repository READMEs for commands. Raw logs and machine-specific recovery
 > artifacts remain local and are not distributed.
+> Current onboarding follows [design 010](010-skill-only-usage.md) and the installed skill.
 
 Status: implemented and accepted on 2026-10-19; see [verification](../history/bridge-verification-2026-10-19.md).
 
@@ -15,7 +16,7 @@ tests below. Package development stays inside `dsh-codex-bridge`; no project or 
 
 ## Deliverables
 
-Make this folder independently copyable into another repository, with no dependency on this
+Keep the runtime self-contained for skill-managed project preparation, with no dependency on this
 project's docs, `.dsh-runs`, source/tests, drive letter, user SID, saved session, or credentials.
 Use PowerShell 7 / Node 22.14+ and the installed Windows DSH desktop runtime; no new dependencies.
 

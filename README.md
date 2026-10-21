@@ -1,74 +1,19 @@
 # DSH Codex Bridge
 
-A copyable bridge for collaboration between **Codex** and **DeepSeek Harness (DSH)**.
-Codex designs a phase and delegates it; DSH implements and tests; Codex reviews, requests
-rework when needed, and independently verifies the result before accepting it.
+A Codex skill for collaboration between **Codex** and **DeepSeek Harness (DSH)**.
+Codex designs a phase and delegates it; DSH implements and tests; Codex reviews,
+requests rework when needed, and verifies the result before accepting it.
 
-The primary product is the **[`dsh-codex-bridge/`](dsh-codex-bridge/README.md) delivery folder**.
-It includes delegation, agent instructions, Windows sandbox readiness/repair/verification,
-and Node subprocess helpers. Copy it into another project to use the workflow.
-No build, packaging or npm install is needed for the bridge itself.
+The skill in [`dsh-codex-bridge/`](dsh-codex-bridge/README.md) includes delegation,
+Windows sandbox setup, execution recovery and report/usage processing.
+It needs no build, packaging or npm install.
 
-## Use the bridge
+## Install the skill
 
-Choose either route. Both use the same `dsh-codex-bridge/` files and require your own DSH setup.
-
-The bridge and optional Codex skill invoke the **DSH command-line interface**, using
-`dsh headless` through `dsh-impl.ps1`. On the verified **Windows** installation, configure
-your DeepSeek API key as `DEEPSEEK_API_KEY` in the user-level file
-`%USERPROFILE%\.dsh\.env` before the first delegation. See
-[DSH CLI and API key setup (Windows)](dsh-codex-bridge/README.md#dsh-cli-and-api-key-setup-windows)
-for the file format and steps. This Windows path and these setup instructions do not apply
-to Linux or macOS; those platforms still need separate setup and validation.
-
-### Option 1: copy the folder
-
-1. Copy `dsh-codex-bridge/` into your project's root. Omit any locally generated `.state/`.
-   A clean Git clone contains no machine-specific state or credentials.
-2. Install PowerShell 7, Node.js 22.14+ and DeepSeek Harness. Configure your own DSH
-   authentication using the [Windows API key guide](dsh-codex-bridge/README.md#dsh-cli-and-api-key-setup-windows). The bridge selects
-   DeepSeek Flash, Max effort, and the Codex review policy per run from `bridge.config.json`.
-3. Give Codex this instruction:
-
-   > Read `dsh-codex-bridge/README.md` and `dsh-codex-bridge/AGENTS.md`. Set up the bridge for
-   > this repository with DSH's workspace-write sandbox enabled. Use DeepSeek Flash with Max
-   > effort. Design one phase, delegate implementation and testing to DSH, review and rework,
-   > independently verify acceptance, report the result, and pause before the next phase.
-
-On Windows, begin with the bundled readiness check and follow the
-[setup guide](dsh-codex-bridge/docs/windows-sandbox.md) if repair is needed:
-
-```powershell
-pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Check
-```
-
-Windows permission checks default to a limit of **28,000 objects**, including files and
-folders. For larger trees, supply a higher value such as `-MaxObjects 50000` to setup and
-to `dsh-impl.ps1` so its automatic preflight uses the same limit. See the setup guide for
-Check, Repair, Verify and Restore examples.
-
-Once setup is verified and Codex has written a design:
-
-```powershell
-pwsh -NoProfile -File dsh-codex-bridge/dsh-impl.ps1 -Spec docs/design/001-example.md
-```
-
-The normal bridge invocation includes Windows preflight. Repair is explicit and saves recovery
-information. DSH stays confined to workspace-write. Run reports are local, ignored artifacts;
-each run writes a canonical `<run>-result.json` beside its prompt, patch, events, stderr and
-Markdown report. That result separates process outcome, the implementer's DONE/BLOCKED/PARTIAL
-claim, report validity and pending independent acceptance, and it records traceable check
-coverage plus observed working-tree changes. A successful model response or zero exit alone is
-never acceptance.
-
-The shipped `bridge.config.json` defaults to `reasoningEffort: "max"` and
-`codexReviewEdits: "Not Allow"`. The bridge applies the selected model/effort to that invocation
-through a temporary `--patch` overlay instead of editing DSH profiles. `Not Allow` means Codex
-reviews and runs checks but delegates production fixes and test additions to DSH, resuming the
-same session by default; `Allow` permits only small, recorded review fixes and focused regression
-cases. See the [delivery guide](dsh-codex-bridge/README.md) for resolution order and overrides.
-
-### Option 2: install as a Codex skill from GitHub
+Use **Windows**, PowerShell 7, Node.js 22.14+ and an installed DeepSeek Harness.
+Configure your own DSH CLI authentication before the first delegation using the
+[Windows API key guide](dsh-codex-bridge/README.md#dsh-cli-and-api-key-setup-windows).
+Linux and macOS have not been verified; managed execution currently requires Windows.
 
 Ask Codex:
 
@@ -77,7 +22,9 @@ Use $skill-installer to install the skill from
 https://github.com/minzhang/dsh-codex-bridge/tree/main/dsh-codex-bridge
 ```
 
-After installation, invoke it in your project:
+## Use the skill in a project
+
+Open the target project in Codex and ask:
 
 ```text
 Use $dsh-codex-bridge for this project. Use DeepSeek Flash with Max effort and
@@ -85,29 +32,42 @@ sandbox enabled. Delegate implementation and testing to DSH, review and rework,
 then report acceptance and pause after each phase.
 ```
 
-The [skill entry point](dsh-codex-bridge/SKILL.md) teaches the same workflow. It reuses the project's
-existing bridge or copies its bundled folder into the project root when absent. Setup and recovery
-data stay in that project; the installed skill remains reusable. No installer script, build or
-packaging pipeline is required in this repository. The original copy-folder route remains available
-without installing a skill. A folder placed only in the project root is loaded by asking Codex to
-read its `SKILL.md`; it is not automatically registered as an installed `$dsh-codex-bridge` skill.
+Codex follows [SKILL.md](dsh-codex-bridge/SKILL.md) to prepare the project's runtime,
+check Windows sandbox readiness, write a design, delegate work, and verify the result.
+Project setup and recovery evidence stay in the target repository; the shared skill
+installation remains reusable. Existing project files and recovery evidence are preserved.
+
+The skill invokes `dsh headless` with workspace-write confinement and normal preflight.
+Defaults are **Flash / Max**, **180 minutes per execution**, and `codexReviewEdits: Not Allow`.
+Related work normally resumes the same DSH session; Codex records a reason for retaining or
+changing it. After interruption, Codex can inspect, scan, stop or recover a specific run.
+
+Each invocation writes local, ignored artifacts including a canonical `<run>-result.json`.
+It separates execution outcome, the implementer's claim, report validity and pending
+acceptance. Token usage lives in execution metadata. A completed model response or zero
+exit alone is never acceptance.
+
+For configuration and operational details used by Codex, see the
+[skill guide](dsh-codex-bridge/README.md),
+[Windows setup guide](dsh-codex-bridge/docs/windows-sandbox.md), and
+[execution recovery guide](dsh-codex-bridge/docs/run-recovery.md).
 
 ## Repository layout
 
 | Directory | Role |
 |---|---|
-| [`dsh-codex-bridge/`](dsh-codex-bridge/README.md) | Delivery: everything a new project needs to run the bridge, including operational setup probes |
+| [`dsh-codex-bridge/`](dsh-codex-bridge/README.md) | Installable Codex skill, bundled runtime and operational setup probes |
 | [`development/`](development/README.md) | Bridge regression tests, designs and review records |
 | [`demos/pascal-desk/`](demos/pascal-desk/README.md) | First verification project: a TypeScript Turbo Pascal inspired terminal editor |
 
-The delivery folder has no dependency on the other two directories. Maintainer tests and
+The skill has no dependency on the other two directories. Maintainer tests and
 historical development records are outside it. Future verification projects belong under `demos/`.
 
 ## What has been verified
 
 | Environment / project | Status |
 |---|---|
-| Windows, DSH desktop 0.2.1-rc.2, PowerShell 7, Node 22.14.0 | Verified locally: copied-folder setup, confinement, delegation, review/rework and recovery |
+| Windows, DSH desktop 0.2.1-rc.2, PowerShell 7, Node 22.14.0 | Verified locally: project setup, confinement, delegation, review/rework and recovery |
 | DeepSeek Flash, Max effort, workspace-write sandbox | Default bridge configuration; used for implementation and complete sandbox test runs |
 | Codex post-review edits `Not Allow` | Default configuration; fixes and test additions stay with DSH, resuming the same session by default |
 | TypeScript terminal application (Pascal Desk) | Verified: build, typecheck, 148 tests and interactive Windows use |
@@ -147,11 +107,10 @@ npm run test:windows
 npm run test:demo
 ```
 
-Distribute `dsh-codex-bridge/` directly from a clean checkout. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for the review workflow.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the review workflow.
 
 ## License
 
-[MIT](LICENSE), including the bridge, maintainer tools and demo. The copyable bridge contains
+[MIT](LICENSE), including the bridge, maintainer tools and demo. The installable skill contains
 its own license. This is an independent integration project; Codex and DeepSeek Harness are
 separate products with their own terms and licenses.

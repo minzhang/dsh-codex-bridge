@@ -1,6 +1,6 @@
 # Contributing
 
-The copyable `dsh-codex-bridge/` folder is the product. Keep its operational scripts and
+The Codex skill in `dsh-codex-bridge/` is the product. Keep its operational scripts and
 instructions self-contained; put regression tests in `development/`.
 Add future example projects under `demos/` with their own README, dependencies and tests.
 
@@ -18,8 +18,8 @@ npm run test:demo
 ```
 
 See [development/README.md](development/README.md) for the declaration check, sandbox commands
-and host-only copied-folder lifecycle verification. The delivery folder is copied directly;
-there is no build or packaging step for bridge users.
+and host-only project-runtime lifecycle verification. Users install and invoke the skill
+from GitHub; there is no build or packaging step.
 
 ## Changes and review
 
@@ -29,7 +29,7 @@ publication are handled directly by Codex using the user's selected model. Do no
 its development to DSH. Keep failures and platform limits
 visible. Never weaken assertions or disable confinement to make a run pass.
 
-When adding a delivery file, keep it self-contained and verify it from a copied folder.
+When adding a skill file, keep it self-contained and verify the skill's project-local runtime.
 Keep normal and sandbox suites equivalent. Do not commit run transcripts, credentials, local
 profiles, `.state/` recovery data, dependencies or build output. Report setup failures with
 sanitized summaries; inspect logs for secrets and personal paths before sharing them.

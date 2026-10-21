@@ -1,16 +1,21 @@
 # Repository publication review — 2026-10-19
 
+> Dated acceptance records follow. Current installation and use are skill-only under
+> [design 010](design/010-skill-only-usage.md). Past test results for retired distribution
+> paths are preserved as evidence, not onboarding instructions.
+
 **Acceptance: ACCEPTED after implementation, rework and independent review.**
 
-The primary product is the copyable `dsh-codex-bridge/` folder. Maintainer tests and sanitized
-records are under `development/`; the accepted Pascal Desk editor is under `demos/pascal-desk/`.
+At this acceptance point, the primary product was the self-contained `dsh-codex-bridge/` runtime.
+Maintainer tests and sanitized records are under `development/`; the accepted Pascal Desk editor
+is under `demos/pascal-desk/`.
 Root and standalone bridge licenses are MIT. Linux/macOS and web/backend/native UI workflows
 remain explicitly unverified.
 
-## Final delivery decision
+## Publication scope at that time
 
-Users copy `dsh-codex-bridge/` into a project's root. No build, npm install or packaging step is
-required for the bridge itself. The owner's clarification removed CI and export tooling from
+No build, npm install or packaging step was required for the bridge itself.
+The owner's clarification removed CI and export tooling from
 scope. The workflow, exporter, allowlist and seven exporter-specific tests were removed together;
 all 12 original bridge Node tests and all 148 demo tests remain. Verification stays local.
 
@@ -72,14 +77,14 @@ and original recovery backups stay local and are not published.
 The repository is public at [minzhang/dsh-codex-bridge](https://github.com/minzhang/dsh-codex-bridge),
 with `main` as its default branch and GitHub recognizing the MIT license. Publication checks cover
 unintended local files, credential patterns, personal workspace paths and broken local Markdown
-links. There is no CI or generated delivery artifact; the tracked delivery folder is ready to copy.
+links. There is no CI or generated delivery artifact. Current installation follows the skill README.
 
-## Optional Codex skill entry point — 2026-10-19
+## Codex skill entry point introduced — 2026-10-19
 
-Added `dsh-codex-bridge/SKILL.md` and `agents/openai.yaml` to the same delivery folder. The original
-project-root copy workflow remains supported. GitHub skill installation is an optional second
-route, with one canonical set of runtime files. The skill reuses an existing project bridge or
-copies its bundled folder there, omitting local state; all setup and delegation run from that
+Added `dsh-codex-bridge/SKILL.md` and `agents/openai.yaml` to the same runtime. Skill installation
+was initially an additional entry point; [design 010](design/010-skill-only-usage.md) later made
+it the sole user entry. There is one canonical set of runtime files. The skill reuses an existing
+project bridge or prepares its bundled runtime there, omitting local state; setup and delegation run from that
 project-local copy. It preserves user model/effort choices, sandbox preflight, DSH implementation
 and testing, Codex independent review/rework, and requested phase pauses.
 
@@ -430,3 +435,39 @@ live-model run are not claimed as verified. Windows containment covers ordinary 
 processes; external-service-launched processes are outside that guarantee. Read-only scanning
 covers this version's control records, not historical runs without them. No automatic restart,
 background monitoring or bidirectional messaging was added.
+
+## Skill-only installation and use — 2026-10-21
+
+**Accepted.** [Design 010](design/010-skill-only-usage.md) makes GitHub skill installation and
+`$dsh-codex-bridge` invocation the sole documented user entry. Both READMEs, the skill,
+agent/contributor/development instructions and Windows/recovery guides now follow that flow.
+Manual folder-distribution directions, the downloaded-ZIP unblocking walkthrough and requirements
+to preserve two user entries were removed. Older records retain actual test facts with explicit
+supersession notices; obsolete onboarding directions were removed.
+
+The installed skill still prepares a project-local runtime as an internal Codex step.
+Windows permission operations and recovery evidence require that project boundary.
+An existing complete runtime is reused, incomplete contents are inspected, and existing project
+files and evidence are preserved. Shared skill installation is never a repair target.
+
+Audit found no production parameter or runtime branch exclusive to manual distribution.
+Repo/launcher/configuration overrides, DryRun, MCP forwarding, sandbox setup, token/report
+processing and execution recovery all serve skill operation. Maintained fixture copies test
+real isolation, confinement and rollback, so their assertions remain intact. The obsolete
+direct-folder branch of the ignored local onboarding checker was removed; only the
+installed-skill branch remains. No new test suite or dependency was added.
+
+| Check | Actual result |
+|---|---|
+| Installed-skill project preparation | Passed with a disposable project path containing spaces: complete file hashes, hidden metadata/license, omitted state, explicit target and local DryRun prompt/output. No live DSH session or permission repair. |
+| Skill validator | `quick_validate.py` passed using existing ignored Python dependencies. |
+| Current documentation | All 49 local links/anchors across 12 current guides resolved; no current manual-distribution or optional-skill entry remained. |
+| Runtime/regression stability | All 28 hashes from the accepted lifecycle change are unchanged. No maintained runtime assertions or test files changed. |
+| Package metadata | JSON parsed; only the description changed. Dependencies, script commands and lockfile remained unchanged. |
+| Diff checks | `git diff --check` passed; only documentation and package description are published. |
+
+This is an onboarding/documentation change. The unchanged runtime retains design 009's
+complete bridge, Windows and demo evidence; those suites were not repeated or claimed as
+fresh runs. Current checks and the retired local branch remain under ignored
+`.dsh-runs/skill-only-*` and `.dsh-runs/skill-checks/`. No model delegation, worktree,
+authentication/profile change or additional platform claim was introduced.

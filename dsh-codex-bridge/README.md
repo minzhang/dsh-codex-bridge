@@ -1,21 +1,16 @@
-# Codex → DeepSeek Harness bridge
+# DSH Codex Bridge skill
 
-Copy this **whole folder** into a project repository. It contains the delegation bridge,
-agent instructions, Windows sandbox setup/repair, and Node subprocess helpers. Maintainer tests
-are kept outside this delivery folder.
-It does not depend on the project in which it was developed.
+Install and invoke this Codex skill to coordinate work between Codex and DeepSeek Harness
+(DSH). Codex designs and reviews; DSH implements, tests and fixes review findings.
+A completed agent run is ready for review; Codex verifies acceptance independently.
 
-This same folder is also a Codex skill, through [SKILL.md](SKILL.md). Both delivery routes use
-the scripts and instructions here; neither requires a build or packaging step.
+The skill bundles its own runtime, agent instructions, Windows sandbox setup/repair and
+Node helpers. It has no dependency on this repository's maintainer tests or demo, and needs
+no build or packaging step.
 
-Codex designs and reviews; DeepSeek Harness (DSH) implements and runs acceptance checks.
-Changes stay uncommitted until the user asks otherwise. A completed agent run is not acceptance:
-Codex reviews the implementation and independently verifies the result.
+## Install the skill from GitHub
 
-## Optional skill installation from GitHub
-
-The direct copy-folder workflow below remains available without skill installation. To install
-this folder as a discoverable skill instead, ask Codex:
+Ask Codex:
 
 ```text
 Use $skill-installer to install the skill from
@@ -30,82 +25,41 @@ Use Flash with Max effort and sandbox enabled. Review and rework the result,
 report acceptance, and pause before the next phase.
 ```
 
-The skill reads these instructions and reuses an existing `<repo>/dsh-codex-bridge/`, or copies
-the complete bundled folder there if absent, omitting `.state/`. It runs setup and delegation from
-that project-local copy. It must not run Windows repair from the shared skill installation or
-overwrite an existing bridge's recovery data. DSH installation/authentication are still required.
+## What Codex prepares
 
-When you only copy this folder to the project root, ask Codex to read `dsh-codex-bridge/SKILL.md`
-directly if you want the skill workflow. That location alone does not register the `$` skill name.
+Follow [SKILL.md](SKILL.md). Codex prepares the project-local runtime at
+`<repo>/dsh-codex-bridge/` from the installed skill, or reuses a complete existing runtime.
+This preparation preserves project files and recovery evidence. Setup and delegation run
+from that project runtime; Windows repair must never target the shared skill installation.
 
-## Start here in a new project
+Before delegation:
 
-Give the next Codex this instruction:
-
-> Read `dsh-codex-bridge/README.md` and `dsh-codex-bridge/AGENTS.md`. Set up this bridge for
-> this repository, keeping DSH in workspace-write mode. On Windows, follow the bundled
-> Windows setup guide and verify confinement before delegating development. Use Flash with
-> Max effort. Design one phase at a time, delegate to DSH, review/rework and report acceptance,
-> then pause before starting the next phase.
-
-1. Keep the folder intact at `<repo>/dsh-codex-bridge`. Do not copy just `dsh-impl.ps1` to `tools/`.
-   Merge the collaboration rules in this folder's `AGENTS.md` into the project's instructions
-   if needed; do not overwrite existing project rules blindly.
-2. Install **PowerShell 7**, **Node 22.14+** (for the bundled Node helpers), and DSH. Configure
-   the DSH CLI's API key using [DSH CLI and API key setup (Windows)](#dsh-cli-and-api-key-setup-windows)
-   below before the first delegation. Never copy credentials into this package.
-3. Check `dsh --version` in a new terminal. The default Windows desktop launcher is
+1. Install **PowerShell 7**, **Node.js 22.14+** and DSH. Configure your own authentication
+   using the API key guide below. In a new terminal, `dsh --version` checks the launcher.
+   The default Windows desktop launcher is
    `%LOCALAPPDATA%\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd`.
-   A downloaded ZIP may mark its scripts as Internet files. If Windows PowerShell refuses a
-   reviewed package script as unsigned under `RemoteSigned`, review/trust the copied kit first,
-   then remove its download markers from the new repository:
+2. Codex reads the project instructions and the skill's [AGENTS.md](AGENTS.md), then follows
+   [Windows setup](docs/windows-sandbox.md) to Check readiness, perform authorized bounded
+   Repair if needed, and Verify confinement. Normal preflight stays enabled.
+3. Codex uses [Node testing](docs/node-testing.md) when the project's test commands need
+   Windows sandbox compatibility, and writes a phase design using
+   [the template](docs/design/TEMPLATE.md).
+4. Codex delegates, reviews the actual diff and reports, requests rework as needed,
+   and independently verifies acceptance.
 
-   ```powershell
-   Get-ChildItem -LiteralPath ./dsh-codex-bridge -Recurse -File -Filter '*.ps1' | Unblock-File
-   ```
+Windows permission checks default to **28,000 objects**, including files and folders.
+Larger repositories can use an explicit `-MaxObjects` value consistently across setup
+and delegation. DSH execution defaults to **180 minutes**, overridable per task.
+The operational reference below describes the commands and parameters Codex uses after
+the skill has prepared the project.
 
-   This changes only those scripts' download markers, not system execution policy or DSH's
-   sandbox. Organization-enforced signing policy may still require an approved signed package.
-4. On **Windows**, run the commands below from the project root. Read
-   [the Windows setup guide](docs/windows-sandbox.md) before applying the repair.
-
-   ```powershell
-   pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Check
-   # If Check reports missing permissions, with authorization to repair this repository:
-   pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Repair -Apply
-   pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Verify
-
-   # For a larger repository, use the same explicit cap at every stage, for example 50000:
-   pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Check -MaxObjects 50000
-   pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Repair -Apply -MaxObjects 50000
-   pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Verify -MaxObjects 50000
-   pwsh -NoProfile -File dsh-codex-bridge/windows/setup.ps1 -Repo . -Action Restore `
-     -Backup '<absolute path to the saved backup JSON>' -Apply -MaxObjects 50000
-   ```
-
-   `-MaxObjects` defaults to 28000 and counts folders and metadata as well as files. Any
-   desired positive Int32 can be supplied; use the same value for all stages and allow
-   headroom for repair metadata. `-MaxObjects 0` explicitly disables the cap. Larger trees
-   need proportionate time and memory. Preflight reports the active limit; if a scan or
-   restore manifest exceeds it, retry with `-MaxObjects` and a larger explicit number.
-
-   Check inspects readiness. Repair saves permission backups before applying the bounded fix.
-   Verify launches actual confined processes and checks outside-write denial. These are setup
-   checks; they do not replace your project's build/tests. Stop and investigate any failed result.
-   Do not run the Windows repair on macOS or Linux.
-5. Configure a project test command compatible with the Windows sandbox if your tests spawn
-   Node workers or capture child output through pipes. See [Node testing](docs/node-testing.md).
-   Run the **complete** project build/test suite through DSH before accepting development work.
-6. Copy [the design template](docs/design/TEMPLATE.md) into your project's design directory and
-   fill it in. All reusable setup instructions and scripts remain in this package.
-
-The Windows setup was developed against **DSH 0.2.1-rc.2**. Installation/API changes, unusual
-permissions, links, or another sandbox policy can require further diagnosis. Preflight is an
-early check, not a promise that every repository or future DSH release will work unchanged.
+Windows setup was developed against **DSH 0.2.1-rc.2**. Installation/API changes and
+unusual filesystem layouts need validation. Managed execution currently requires Windows;
+Linux/macOS and other project types remain unverified.
 
 ## DSH CLI and API key setup (Windows)
 
-This bridge and its optional Codex skill call the **command-line version of DeepSeek Harness**.
+This skill calls the **command-line version of DeepSeek Harness**.
 The project-local `dsh-impl.ps1` launches `dsh headless --patch <run-patch.yml> --json` and sends
 the design on standard input. The verified Windows desktop installation supplies the `dsh.cmd`
 launcher shown above. Open a new terminal after installation and check `dsh --version`; if the
@@ -141,7 +95,7 @@ Save the filename as exactly `.env`, not `.env.txt`, then start a new bridge/DSH
 CLI loads it. An already supplied `DEEPSEEK_API_KEY` in the launching environment is also
 supported. `dsh --version` only checks that the launcher runs; the first successful model
 request confirms authentication. Keep the real key in your local user configuration, outside
-this repository and the copied skill. Do not commit it, include it in run reports, or paste it
+the project and the skill installation. Do not commit it, include it in run reports, or paste it
 into chat. The skill uses your configured credentials and does not create or replace them.
 
 ## Delegate and review
@@ -522,23 +476,25 @@ changes DSH's role or grants DSH commit/publication permission.
 | `dsh-impl.ps1` | Design → DSH run → review report |
 | `dsh-run.ps1` | Read-only status/scan and explicit owned-run stop/recovery |
 | `bridge.config.json` | Shipped reasoning effort and Codex post-review edit policy |
-| `SKILL.md` | Optional Codex skill entry point for setup, delegation and review |
+| `SKILL.md` | Codex skill entry point for setup, delegation and review |
 | `agents/openai.yaml` | Codex skill display metadata |
-| `AGENTS.md` | Portable collaboration and onboarding instructions |
+| `AGENTS.md` | Collaboration and onboarding instructions for the project runtime |
 | `docs/design/TEMPLATE.md` | Per-phase design skeleton |
 | `docs/windows-sandbox.md` | Windows diagnosis, repair, verification and rollback method |
-| `windows/` | Portable Windows setup and confined probes |
+| `windows/` | Windows setup and confined probes |
 | `docs/node-testing.md` | Complete-suite test integration and TypeScript example |
 | `node/` | File-backed subprocess capture, no-worker test launcher, and canonical run-report helper |
-| `LICENSE` | MIT license, retained when copying the package |
+| `LICENSE` | MIT license for the skill and its runtime |
 | `mcp/dsh-mcp-server.mjs` | Optional MCP interface to the bridge |
 | `.state/` | Ignored, machine/repository-specific setup evidence and backups |
 
-When distributing the folder, **omit `.state/` and generated test fixtures**. Retain recovery data
-at the original repository until no longer needed. There are no project-specific sessions, user
-SIDs, credential files, or installed-runtime copies to transfer.
+Generated `.state/` and test evidence belong to the target project and are excluded from skill
+installation. Retain recovery data at its original repository until no longer needed.
 
 ## Optional MCP interface
+
+After the installed skill has prepared the project runtime, Codex can use this optional
+transport to invoke the same runtime:
 
 ```powershell
 codex mcp add dsh -- node C:\path\to\repo\dsh-codex-bridge\mcp\dsh-mcp-server.mjs
@@ -551,7 +507,7 @@ parameters, and `max_objects` maps to `-MaxObjects`; omitted values let the proj
 configuration and built-in defaults apply. `0` is forwarded as an explicit unlimited opt-out.
 Tool-schema defaults are descriptive only and are not injected into project settings. Run
 Windows setup before using it. It calls the same bridge and preserves its preflight checks.
-Direct PowerShell invocation is the clearest route for setup diagnostics.
+Codex uses the PowerShell commands above for setup diagnostics.
 
 For a launched run, the MCP tool returns the validated result object in `structuredContent`
 and a readable text summary (including the four dimensions and artifact pointers) in
@@ -564,8 +520,8 @@ diagnostic response and do not fabricate a structured result. Dry runs do not cr
 ## Verify a new project
 
 The bundled Windows `Verify` action is an operational readiness check. Its probes stay in the
-copyable package because a new repository needs them to validate setup. Development regression
-suites and historical acceptance records are maintained outside this folder.
+skill because each target repository needs them to validate setup. Development regression
+suites and historical acceptance records are maintained outside the skill.
 
 After setup, write a verification-only design using `docs/design/TEMPLATE.md`. Name the target
 project's actual typecheck, build and complete test commands. Delegate it through the bridge,

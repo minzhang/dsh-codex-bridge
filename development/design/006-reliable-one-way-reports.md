@@ -1,5 +1,8 @@
 # Reliable one-way implementation reports
 
+> Onboarding directions were updated by [design 010](010-skill-only-usage.md).
+> Dated implementation and verification results below remain historical evidence.
+
 Status: accepted after DSH implementation, same-session rework and independent Codex
 verification, 2026-10-20. Implementation and publication were authorized by the user.
 Design/review owner: Codex. Implementer: DSH.
@@ -163,7 +166,7 @@ development/README.md, package.json and development/tests/bridge-config.test.mjs
 It may add delivery node/run-report.mjs (or a small reporting-only PowerShell helper under
 delivery/lib/) and development/tests/bridge-report.test.mjs. Keep runtime self-contained
 and a single canonical implementation. Update test fixtures to copy any new helper when
-they copy the bridge; retain both direct folder and installed-skill paths.
+they isolate the runtime; retain the installed-skill preparation path.
 Codex owns this design and development/reviews.md. Skill docs may receive a minimal status
 terminology/reference update only; preserve all existing onboarding instructions.
 Do not modify Windows permission implementation or demo source/tests.
@@ -195,7 +198,7 @@ Run all commands below and save complete logs and actual exits in ignored
 <!-- dsh-acceptance-end -->
 
 Codex independently reviews and runs npm test, npm run test:windows, demo check/build,
-npm run test:demo and the A6 consumer. Verify both copied delivery routes and the two
+npm run test:demo and the A6 consumer. Verify installed-skill project preparation and the two
 host-only reviewer-lifecycle.ps1 scenarios if necessary for the changed delivery contents;
 those repair only their own unique host-temp fixtures and retain recovery evidence.
 Perform a live same-session follow-up through the newly implemented bridge to verify the

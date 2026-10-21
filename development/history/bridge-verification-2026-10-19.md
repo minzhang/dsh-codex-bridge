@@ -3,14 +3,15 @@
 > Historical record: paths and test totals below describe the original development layout.
 > Use the current repository READMEs for commands. Raw logs and machine-specific recovery
 > artifacts remain local and are not distributed.
+> Current onboarding follows the installed skill under [design 010](../design/010-skill-only-usage.md).
 
 **Accepted by Codex after DSH implementation and corrective review.** This was bridge setup work;
 no product development phase was started. The originating project's phase 3 remains paused.
 
 At this acceptance point, reusable code, setup/rollback instructions, Node helpers, tests and onboarding lived in the delivery
-folder. Copy the whole package, omitting `.state`. No original-project documentation, machine
+folder. No original-project documentation, machine
 paths, saved sessions, SIDs, credentials, or old repair scripts are required. Start with
-[current delivery README](../../dsh-codex-bridge/README.md), [Windows setup](../../dsh-codex-bridge/docs/windows-sandbox.md), and [Node testing](../../dsh-codex-bridge/docs/node-testing.md).
+[current skill README](../../dsh-codex-bridge/README.md), [Windows setup](../../dsh-codex-bridge/docs/windows-sandbox.md), and [Node testing](../../dsh-codex-bridge/docs/node-testing.md).
 
 ## Verified environment and results
 

@@ -1,7 +1,7 @@
 # Working on DSH Codex Bridge
 
-The primary product is `dsh-codex-bridge/`, a self-contained delivery folder copied into new
-repositories. `development/` contains maintainer tests, designs and sanitized
+The primary product is the self-contained Codex skill in `dsh-codex-bridge/`.
+`development/` contains maintainer tests, designs and sanitized
 history. `demos/pascal-desk/` is the first verification demo. Delivery must not depend on either
 supporting directory. Keep future demos under `demos/`.
 
@@ -23,12 +23,13 @@ not commit, publish, access GitHub credentials, or change authentication/profile
 The Pascal Desk feature phases are complete; this task does not authorize new demo features or
 claims that untested platforms or project types have been verified.
 
-Distribution is direct folder copy. The user explicitly removed CI and packaging/export tooling
-from scope. No build, package or release pipeline is required to deliver the bridge.
+Users install the skill from GitHub and invoke `$dsh-codex-bridge` in their target project.
+The user removed CI and packaging/export tooling from scope. No build, package or release
+pipeline is required.
 
-The same delivery folder may also be installed as a Codex skill from GitHub. Preserve both entry
-points and one canonical runtime. Skill onboarding must reuse or copy a project-local bridge;
-never run Windows repair against the shared skill installation or overwrite recovery evidence.
+Maintain one skill entry point and one canonical runtime. During onboarding, Codex prepares
+the project-local runtime from the installed skill or reuses a complete existing runtime.
+Never run Windows repair against the shared skill installation or overwrite recovery evidence.
 
 ## Constraints
 

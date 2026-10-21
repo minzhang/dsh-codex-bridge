@@ -1,15 +1,16 @@
 <!--
-Drop-in AGENTS.md protocol for repos where Codex designs and DeepSeek Harness implements.
+Collaboration protocol bundled with the installed DSH Codex Bridge skill.
 Both agents read AGENTS.md (Codex natively; dsh via its agent-instructions plugin), so this
-file is the shared contract. Delete the HTML comments when adapting.
+file is the shared contract for the skill's project-local runtime.
 -->
 
 # Agent roles: design vs implementation
 
 ## First run in a new repository
 
-Read this package's `README.md` before delegation. Keep the whole `dsh-codex-bridge` folder
-together. All reusable setup/repair code and instructions live here; never assume the originating
+Invoke the installed `$dsh-codex-bridge` skill and read its `README.md` before delegation.
+Codex prepares or reuses the project's complete runtime. All reusable setup/repair code and
+instructions live here; never assume the originating
 project's docs, `.dsh-runs`, source, saved sessions, machine paths, or credentials are available.
 
 On Windows, follow `docs/windows-sandbox.md`: run Check, apply a repository-bounded repair when

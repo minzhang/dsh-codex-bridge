@@ -14,14 +14,13 @@ boundaries. Loading this skill does not authorize unrelated work or publication.
 Resolve the target project root from the user's task and working directory. Paths in the links
 below are relative to this skill folder; command examples run from the target project root.
 
-Two entry points use the same files:
-
-- **Folder already copied to `<project>/dsh-codex-bridge/`:** use it directly. Skill installation
-  is optional; explicitly reading this file provides the same workflow.
-- **Skill installed elsewhere:** inspect `<project>/dsh-codex-bridge/` first. Reuse an existing
-  complete bridge. If absent, copy this whole skill folder there, including hidden `.gitignore`,
-  docs, scripts, and LICENSE, but excluding `.state/` and generated local evidence. Use an ordinary
-  copy, not a link. Do not overwrite an existing bridge or its recovery data during onboarding.
+After the user installs and invokes this skill, prepare its project-local runtime:
+inspect `<project>/dsh-codex-bridge/` and reuse an existing complete runtime. If absent,
+initialize that directory from the installed skill's bundled files, including hidden `.gitignore`,
+docs, scripts and LICENSE, but excluding `.state/` and generated local evidence. Use real files,
+not links. Codex performs this preparation; the user does not need to distribute folders.
+Preserve existing project files and recovery data. If the directory is incomplete, inspect it
+and resolve the missing files without overwriting unrelated content or evidence.
 
 Read the project instructions plus the project-local bridge's [README.md](README.md) and
 [AGENTS.md](AGENTS.md). Preserve existing project rules. Keep `.dsh-runs/` ignored in the target

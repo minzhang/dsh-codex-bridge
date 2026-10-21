@@ -6,13 +6,15 @@ verification, 2026-10-19. Scope was authorized by the user's three requested cha
 The user's 2026-10-20 follow-up supersedes this document's unlimited default with a
 28,000-object default and explicit higher overrides; see [design 005](005-object-count-default.md).
 The original implementation and review history below are retained for traceability.
+Onboarding now follows the installed skill under [design 010](010-skill-only-usage.md);
+past verification of retired distribution paths is historical evidence only.
 
 ## Goal
 
 Expose DeepSeek V4.1 Flash effort with MAX as the real runtime default; make Codex's
 post-review minor fixes and limited test additions an explicit opt-in defaulting to
 `Not Allow`; remove the default 10,000-object permission-handling limit. Preserve
-both delivery routes, one runtime, Windows preflight and workspace-write confinement.
+the installed-skill workflow, one runtime, Windows preflight and workspace-write confinement.
 
 ## Configuration and interfaces
 
