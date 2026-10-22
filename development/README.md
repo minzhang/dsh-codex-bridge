@@ -108,6 +108,8 @@ new repository or restore it against another tree.
   observed run state, bounded termination and explicit interruption recovery.
 - [Skill-only usage](design/010-skill-only-usage.md): the current installation and onboarding
   contract, superseding older distribution directions.
+- [High effort by default](design/011-default-high-effort.md): shipped and fallback effort
+  defaults, with explicit configuration and per-run overrides preserved.
 - Earlier bridge designs in `design/001-*` and `design/002-*` record the original implementation.
 - `history/` contains sanitized historical reports. Paths/test counts there describe the layout
   and product stage at the time; follow current READMEs for commands.

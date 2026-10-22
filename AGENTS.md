@@ -33,7 +33,7 @@ Never run Windows repair against the shared skill installation or overwrite reco
 
 ## Constraints
 
-- The delivered bridge uses DeepSeek Flash with Max effort and DSH workspace-write confinement.
+- The delivered bridge defaults to DeepSeek Flash with High effort and DSH workspace-write confinement.
   Never disable confinement to make checks pass. Normal Windows preflight remains enabled.
 - Preserve all existing assertions and coverage. Location-only test corrections are allowed;
   do not drop or weaken checks. Keep normal and sandbox test-file lists synchronized.

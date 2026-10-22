@@ -27,7 +27,7 @@ https://github.com/minzhang/dsh-codex-bridge/tree/main/dsh-codex-bridge
 Open the target project in Codex and ask:
 
 ```text
-Use $dsh-codex-bridge for this project. Use DeepSeek Flash with Max effort and
+Use $dsh-codex-bridge for this project. Use DeepSeek Flash with High effort and
 sandbox enabled. Delegate implementation and testing to DSH, review and rework,
 then report acceptance and pause after each phase.
 ```
@@ -38,7 +38,7 @@ Project setup and recovery evidence stay in the target repository; the shared sk
 installation remains reusable. Existing project files and recovery evidence are preserved.
 
 The skill invokes `dsh headless` with workspace-write confinement and normal preflight.
-Defaults are **Flash / Max**, **180 minutes per execution**, and `codexReviewEdits: Not Allow`.
+Defaults are **Flash / High**, **180 minutes per execution**, and `codexReviewEdits: Not Allow`.
 Related work normally resumes the same DSH session; Codex records a reason for retaining or
 changing it. After interruption, Codex can inspect, scan, stop or recover a specific run.
 
@@ -68,7 +68,8 @@ historical development records are outside it. Future verification projects belo
 | Environment / project | Status |
 |---|---|
 | Windows, DSH desktop 0.2.1-rc.2, PowerShell 7, Node 22.14.0 | Verified locally: project setup, confinement, delegation, review/rework and recovery |
-| DeepSeek Flash, Max effort, workspace-write sandbox | Default bridge configuration; used for implementation and complete sandbox test runs |
+| DeepSeek Flash, High effort, workspace-write sandbox | Current default; configuration, session forwarding and reports verified with controlled child processes |
+| DeepSeek Flash, Max effort, workspace-write sandbox | Previous default used for live implementation and complete sandbox test runs; remains an explicit override |
 | Codex post-review edits `Not Allow` | Default configuration; fixes and test additions stay with DSH, resuming the same session by default |
 | TypeScript terminal application (Pascal Desk) | Verified: build, typecheck, 148 tests and interactive Windows use |
 | Linux and macOS | **Not yet verified**; Windows ACL repair does not apply there |

@@ -21,7 +21,7 @@ Then, in the target project's chat:
 
 ```text
 Use $dsh-codex-bridge to design and delegate this project's next phase to DSH.
-Use Flash with Max effort and sandbox enabled. Review and rework the result,
+Use Flash with High effort and sandbox enabled. Review and rework the result,
 report acceptance, and pause before the next phase.
 ```
 
@@ -407,7 +407,7 @@ snapshots are published.
 | `-OutDir` | `.dsh-runs` | Run artifacts |
 | `-Dsh` | PATH / desktop fallback | Explicit DSH launcher |
 | `-Config` | `bridge.config.json` beside the script | Configuration file; explicit relative paths resolve against `-Repo` |
-| `-ReasoningEffort` | configuration / `max` | `off`, `low`, `high`, or `max` |
+| `-ReasoningEffort` | configuration / `high` | `off`, `low`, `high`, or `max` |
 | `-CodexReviewEdits` | configuration / `Not Allow` | `Not Allow` or `Allow` |
 | `-DryRun` | off | Print resolved settings, prompt and command without starting DSH or preflight |
 | `-SkipWindowsPreflight` | off | Diagnostic opt-out from readiness checks; does not change confinement |
@@ -431,7 +431,7 @@ passes it to `dsh headless --patch <absolute-overlay-path>`. The overlay sets on
   config:
     provider: deepseek-official
     model: deepseek-flash
-    reasoningEffort: max
+    reasoningEffort: high
 ```
 
 This selects the model and effort for that invocation, including a resumed session and rework.
@@ -439,18 +439,24 @@ The shipped `bridge.config.json` beside `dsh-impl.ps1` supplies the defaults:
 
 ```json
 {
-  "reasoningEffort": "max",
+  "reasoningEffort": "high",
   "codexReviewEdits": "Not Allow"
 }
 ```
 
 Each setting resolves independently: explicit command-line parameter, then configuration file,
-then built-in default (`max` / `Not Allow`). The implicit file is `bridge.config.json` beside
+then built-in default (`high` / `Not Allow`). The implicit file is `bridge.config.json` beside
 the script; `-Config` selects another file, and an explicit relative path resolves against
 `-Repo`. An absent implicit file keeps the built-in defaults, while an explicitly named missing
 or invalid file fails before preflight or model launch. Supported effort values are `off`,
 `low`, `high`, `max`; the review policy is `Not Allow` or `Allow`. Values are case-insensitive;
 effective values are canonicalized to lower-case effort and `Not Allow`/`Allow`.
+
+To request Max for one invocation, pass `-ReasoningEffort max` (MCP: `reasoning_effort: "max"`)
+or set `"reasoningEffort": "max"` in the selected configuration. Existing project runtimes
+with an explicit `max` configuration retain it; change that setting to `high` or pass
+`-ReasoningEffort high` to use High there. The effective setting applies to both new and
+resumed sessions without changing the DSH user profile.
 
 The tested catalog labels this model alias DeepSeek-V4.1-Flash. Configure authentication using
 [DSH CLI and API key setup (Windows)](#dsh-cli-and-api-key-setup-windows) or an existing

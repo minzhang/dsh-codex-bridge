@@ -51,7 +51,7 @@
 
 .PARAMETER ReasoningEffort
   Reasoning effort: off, low, high, or max (case-insensitive). Overrides the
-  configuration file. Canonical effective values are lower-case.
+  configuration file. Defaults to high. Canonical effective values are lower-case.
 
 .PARAMETER CodexReviewEdits
   Post-review Codex edit policy: 'Not Allow' or 'Allow' (case-insensitive).
@@ -315,7 +315,7 @@ if (-not $DryRun) {
     $runRecord = Start-RunRecord $runContext $runName $Spec $Session $TimeoutMinutes
 }
 
-$builtinReasoningEffort = 'max'
+$builtinReasoningEffort = 'high'
 $builtinCodexReviewEdits = 'Not Allow'
 $configPath = Resolve-BridgeConfigPath -Explicit $configWasSpecified -Path $Config -RepoRoot $repoRoot
 $configValues = @{ reasoningEffort = $null; codexReviewEdits = $null }

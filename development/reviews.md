@@ -471,3 +471,42 @@ complete bridge, Windows and demo evidence; those suites were not repeated or cl
 fresh runs. Current checks and the retired local branch remain under ignored
 `.dsh-runs/skill-only-*` and `.dsh-runs/skill-checks/`. No model delegation, worktree,
 authentication/profile change or additional platform claim was introduced.
+
+## High effort by default — 2026-10-22
+
+**Accepted.** [Design 011](design/011-default-high-effort.md) implements
+the user's request to change the default DSH session model effort from Max to High.
+Both shipped configuration and the built-in fallback now select `high`. Current skill
+instructions, CLI help, MCP descriptions and onboarding examples agree with that default.
+
+Per-setting precedence remains command line, selected configuration, then fallback. An absent
+implicit file, an empty configuration and a configuration omitting effort use High. Existing
+explicit Max configurations remain effective, and CLI/MCP Max overrides remain supported.
+The run-scoped overlay carries the effective effort into new and resumed sessions; the JSON
+result and Markdown report record it. The guide explains how an existing project with Max
+configured can opt into High. Historical live Max verification is preserved as historical.
+
+Only superseded default expectations were updated. Two additional regressions cover an empty
+configuration and a retained implicit Max configuration; the existing partial-configuration
+case also verifies the High fallback and its source. All supported-effort, override, confinement,
+preflight and lifecycle assertions remain. Codex performed this work directly using the user's
+selected model, with controlled real child processes and no DSH model delegation.
+
+| Check | Actual result |
+|---|---|
+| Ordinary bridge suite, `npm test` | 82 passed, zero failed/skipped. |
+| Complete no-worker bridge suite, `npm run test:sandbox` | 82 passed, zero failed/skipped. Run directly by Codex. |
+| Windows suite, `npm run test:windows` | Passed syntax, path/state/link boundaries, 28,000/28,001-object limits and ACL regressions. |
+| Demo typecheck/build and ordinary tests | Typecheck and build passed; 148 tests passed, zero failed/skipped. |
+| Demo no-worker tests | Build and 148 tests passed, zero failed/skipped. |
+| Type consumer | Strict NodeNext declaration-consumer check passed. |
+| Skill and project preparation | Skill validator passed; an installed-skill fixture prepared an intact project runtime in a path containing spaces and passed DryRun with local output and no shared state mutation. |
+| Documentation and test manifests | 50 local links/anchors across 12 current guides resolved; ordinary/no-worker bridge lists retain the same seven files; package metadata is unchanged. |
+| Final source review | All 28 runtime/test source hashes match the verified versions; no assertion was removed; whitespace checks passed. |
+
+Detailed test logs and runtime/test source hashes remain ignored under
+`.dsh-runs/high-effort-checks/`; installed-skill preparation evidence remains under
+`.dsh-runs/skill-checks/`. The retained Windows object-limit checks used disposable fixtures.
+No DSH user profile, authentication, dependency, build pipeline or sandbox configuration was
+changed. These checks verify High configuration and forwarding through controlled children,
+not a fresh live High-model API call. No additional platform or project type is claimed.

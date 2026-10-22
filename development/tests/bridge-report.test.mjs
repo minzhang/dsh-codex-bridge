@@ -494,7 +494,7 @@ test('a valid DONE report produces one canonical result, Markdown, and terminal 
   assert.equal(result.execution.originalExitCode, 0);
   assert.equal(result.execution.bridgeExitCode, 0);
   assert.equal(result.execution.settings.model, 'deepseek-official/deepseek-flash');
-  assert.equal(result.execution.settings.reasoningEffort, 'max');
+  assert.equal(result.execution.settings.reasoningEffort, 'high');
   assert.equal(result.execution.settings.codexReviewEdits, 'Not Allow');
   assert.equal(result.execution.settings.preflightObjectLimit, 28000);
 
@@ -535,7 +535,7 @@ test('a valid DONE report produces one canonical result, Markdown, and terminal 
   const markdown = readFileSync(resolve(repo, result.artifacts.report), 'utf8');
   assert.match(markdown, /\| model \| deepseek-official\/deepseek-flash \|/);
   assert.match(markdown, /\| preflight object limit \| 28000 \|/);
-  assert.match(markdown, /\| reasoning effort \| max \(source: .*\) \|/);
+  assert.match(markdown, /\| reasoning effort \| high \(source: .*\) \|/);
   assert.match(markdown, /\| Codex review edits \| Not Allow \(source: .*\) \|/);
   assert.match(markdown, /## Outcome before detail/);
   assert.match(markdown, /## Acceptance coverage/);

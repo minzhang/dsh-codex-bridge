@@ -80,7 +80,7 @@ const TOOL = {
         type: 'string',
         enum: REASONING_EFFORTS,
         description:
-          'Optional reasoning effort. Overrides the configuration file; defaults to the configuration or max.',
+          'Optional reasoning effort. Overrides the configuration file; defaults to the configuration or high.',
       },
       codex_review_edits: {
         type: 'string',

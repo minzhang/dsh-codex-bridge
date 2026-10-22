@@ -185,7 +185,7 @@ test('shipped config is the implicit default and dry run writes a patch', async 
   assert.equal(result.code, 0, result.stderr);
   const resolved = parseResolved(result.stdout);
   assert.equal(resolved.model, 'deepseek-official/deepseek-flash');
-  assert.equal(resolved.effort, 'max');
+  assert.equal(resolved.effort, 'high');
   assert.equal(resolved.policy, 'Not Allow');
   assert.ok(resolved.configuration.includes(shippedConfig));
   assert.ok(resolved.configuration.includes('(implicit)'));
@@ -199,7 +199,7 @@ test('shipped config is the implicit default and dry run writes a patch', async 
     resolved.prompt.slice(0, -'-prompt.md'.length),
   );
   const patch = readPatch(resolved.patch);
-  assert.match(patch, /^    reasoningEffort: max$/m);
+  assert.match(patch, /^    reasoningEffort: high$/m);
   assert.ok(resolved.prompt.endsWith('-prompt.md'));
   assert.ok(existsSync(resolved.prompt));
   const prompt = assertPromptPolicy(resolved.prompt, 'Not Allow');
@@ -207,7 +207,7 @@ test('shipped config is the implicit default and dry run writes a patch', async 
   assert.equal(readFileSync(join(repo, 'out dir', '.gitignore'), 'utf8'), '*\n');
 });
 
-test('absent implicit config uses built-in max and Not Allow defaults', async () => {
+test('absent implicit config uses built-in high and Not Allow defaults', async () => {
   const directory = caseDirectory('missing-implicit');
   const script = copyBridgeScript(join(directory, 'bridge'));
   const repo = writeFixtureRepo('missing-implicit repo');
@@ -222,12 +222,56 @@ test('absent implicit config uses built-in max and Not Allow defaults', async ()
 
   assert.equal(result.code, 0, result.stderr);
   const resolved = parseResolved(result.stdout);
-  assert.equal(resolved.effort, 'max');
+  assert.equal(resolved.effort, 'high');
   assert.equal(resolved.policy, 'Not Allow');
   assert.equal(resolved.configuration, 'built-in defaults');
   assert.equal(resolved.effortSource, 'built-in default');
   assert.equal(resolved.policySource, 'built-in default');
   assert.equal(resolved.preflightMaxObjects, 28000);
+  assert.match(readPatch(resolved.patch), /^    reasoningEffort: high$/m);
+});
+
+test('an empty explicit config uses both built-in defaults', async () => {
+  const repo = writeFixtureRepo('empty-config repo');
+  writeConfig(repo, 'bridge.json', '{}\n');
+  const result = await runBridge(bridgeScript, [
+    '-Repo', repo,
+    '-Spec', 'design.md',
+    '-OutDir', 'out',
+    '-Dsh', process.execPath,
+    '-Config', 'bridge.json',
+    '-DryRun',
+  ]);
+
+  assert.equal(result.code, 0, result.stderr);
+  const resolved = parseResolved(result.stdout);
+  assert.equal(resolved.effort, 'high');
+  assert.equal(resolved.effortSource, 'built-in default');
+  assert.equal(resolved.policy, 'Not Allow');
+  assert.equal(resolved.policySource, 'built-in default');
+  assert.ok(resolved.configuration.endsWith('bridge.json (explicit)'));
+  assert.match(readPatch(resolved.patch), /^    reasoningEffort: high$/m);
+});
+
+test('an existing implicit max config still overrides the high fallback', async () => {
+  const directory = caseDirectory('existing-max');
+  const script = copyBridgeScript(join(directory, 'bridge'));
+  const config = writeConfig(directory, 'bridge/bridge.config.json', '{"reasoningEffort":"max"}\n');
+  const repo = writeFixtureRepo('existing-max repo');
+  const result = await runBridge(script, [
+    '-Repo', repo,
+    '-Spec', 'design.md',
+    '-OutDir', 'out',
+    '-Dsh', process.execPath,
+    '-DryRun',
+  ]);
+
+  assert.equal(result.code, 0, result.stderr);
+  const resolved = parseResolved(result.stdout);
+  assert.equal(resolved.effort, 'max');
+  assert.equal(resolved.effortSource, config);
+  assert.equal(resolved.policy, 'Not Allow');
+  assert.equal(resolved.policySource, 'built-in default');
   assert.match(readPatch(resolved.patch), /^    reasoningEffort: max$/m);
 });
 
@@ -384,7 +428,9 @@ test('explicit relative config paths resolve against Repo and support spaces', a
   assert.equal(resolved.policy, 'Allow');
   assert.ok(resolved.policySource.endsWith(join('config dir', 'my config.json')));
   assert.ok(resolved.configuration.endsWith('my config.json (explicit)'));
-  assert.match(readPatch(resolved.patch), /^    reasoningEffort: max$/m);
+  assert.equal(resolved.effort, 'high');
+  assert.equal(resolved.effortSource, 'built-in default');
+  assert.match(readPatch(resolved.patch), /^    reasoningEffort: high$/m);
 });
 
 test('explicit missing config fails before writing run artifacts', async () => {
@@ -601,7 +647,7 @@ test('a normal run forwards the patch, session, mode, and environment to DSH', a
   ]);
   assert.ok(isAbsolute(patchPath));
   assert.ok(existsSync(patchPath));
-  assert.match(readPatch(patchPath), /^    reasoningEffort: max$/m);
+  assert.match(readPatch(patchPath), /^    reasoningEffort: high$/m);
   assert.equal(capture.cwd, repo);
   assert.equal(capture.permissionMode, 'workspace-write');
   assert.ok(capture.stdin.includes('Codex review policy for this run: Not Allow.'));
@@ -614,7 +660,7 @@ test('a normal run forwards the patch, session, mode, and environment to DSH', a
   const report = readFileSync(reportPath, 'utf8');
   assert.match(report, /\| model \| deepseek-official\/deepseek-flash \|/);
   assert.match(report, /\| preflight object limit \| 28000 \|/);
-  assert.match(report, /\| reasoning effort \| max \(source: .*bridge\.config\.json\) \|/);
+  assert.match(report, /\| reasoning effort \| high \(source: .*bridge\.config\.json\) \|/);
   assert.match(report, /\| Codex review edits \| Not Allow \(source: .*bridge\.config\.json\) \|/);
   assert.match(report, /\| configuration \| .*bridge\.config\.json \(implicit\) \|/);
   assert.match(report, /FAKE DSH COMPLETE/);

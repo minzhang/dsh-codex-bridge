@@ -42,7 +42,7 @@ Have the user configure any missing key locally; do not request its value in cha
 Use the README's **Model, effort, and Codex review policy** section. The bridge selects
 DeepSeek Flash and the requested effort for
 each invocation through a run-scoped `--patch` overlay; its shipped `bridge.config.json`
-defaults to `reasoningEffort: max` and `codexReviewEdits: Not Allow`. `-Config`,
+defaults to `reasoningEffort: high` and `codexReviewEdits: Not Allow`. `-Config`,
 `-ReasoningEffort`, and `-CodexReviewEdits` override the file per setting. Do not edit global
 profiles, credentials or unrelated settings, and never print or copy credentials into the
 project.

@@ -24,7 +24,7 @@ Do not run Windows permission scripts on macOS/Linux. Distinguish DSH child conf
 the host permission needed to launch DSH or provision the approved repository. A blocked setup
 must state the exact evidence and recovery path; do not prescribe full-access mode as a shortcut.
 
-Use the user's requested model/effort (Flash/Max in this kit's onboarding example). The bridge
+Use the user's requested model/effort (Flash/High in this kit's onboarding example). The bridge
 reads `bridge.config.json`, an explicit `-Config` file, or `-ReasoningEffort` and applies the
 selection through a run-scoped `--patch` overlay. It must not edit user profiles, credentials,
 authentication or unrelated settings. Report each phase after review and any rework; pause at
